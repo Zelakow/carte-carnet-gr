@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Carnet GR · Carte IGN</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+:root{--bg:#f4f5f1;--fg:#16201a;--mut:#5c6a61;--glass:rgba(255,255,255,.86);--edge:rgba(20,30,24,.14);--acc:#cf1734}
+@media (prefers-color-scheme:dark){:root{--bg:#101512;--fg:#eef2ee;--mut:#a3b0a7;--glass:rgba(24,30,26,.86);--edge:rgba(255,255,255,.16)}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#map{position:fixed;inset:0}
+.bar{position:fixed;left:max(10px,env(safe-area-inset-left));right:max(10px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top));display:flex;gap:8px;flex-wrap:wrap;align-items:center;pointer-events:none;z-index:5}
+.pill{pointer-events:auto;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);border-radius:999px;padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+.title{font-weight:650;max-width:min(60vw,420px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title small{font-weight:400;color:var(--mut);margin-left:6px}
+.seg{display:flex;padding:3px;gap:2px}
+.seg button,.btn{font:inherit;color:inherit;border:0;background:none;border-radius:999px;padding:6px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.side{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);display:flex;flex-direction:column;gap:8px;z-index:5}
+.side .btn{width:44px;height:44px;padding:0;font-size:20px;line-height:1;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);box-shadow:0 2px 10px rgba(0,0,0,.12)}
+#msg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(14px,env(safe-area-inset-bottom)) + 40px);z-index:6;max-width:min(90vw,460px);text-align:center}
+#msg[hidden]{display:none}
+.maplibregl-ctrl-attrib{font-size:11px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="bar">
+  <div class="pill title" id="title">Carte IGN</div>
+  <div class="pill seg" role="group" aria-label="Fond de carte">
+    <button data-b="plan" aria-pressed="true">Plan IGN</button>
+    <button data-b="topo" aria-pressed="false">Classique</button>
+    <button data-b="photo" aria-pressed="false">Photos</button>
+  </div>
+</div>
+<div class="side">
+  <button class="btn pill" id="fit" title="Voir tout le parcours" aria-label="Voir tout le parcours">⤢</button>
+  <button class="btn pill" id="loc" title="Ma position" aria-label="Ma position">◎</button>
+  <button class="btn pill" id="gpx" title="Télécharger le GPX" aria-label="Télécharger le GPX">⇩</button>
+</div>
+<div class="pill" id="msg" hidden></div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+/* Carnet GR — carte IGN complète. Le parcours arrive dans l'adresse (après #) : rien n'est enregistré ni envoyé ailleurs qu'à l'IGN (fonds de carte).
+   #n=<nom>&t=<polyline précision 5>&m=<lat,lng,étiquette;…> */
+const P = new URLSearchParams(location.hash.slice(1));
+function decode(s){const o=[];let i=0,la=0,lo=0;while(i<s.length){for(const k of [0,1]){let r=0,sh=0,b;do{b=s.charCodeAt(i++)-63;r|=(b&31)<<sh;sh+=5}while(b>=32&&i<=s.length);const d=r&1?~(r>>1):r>>1;if(k)lo+=d;else la+=d}o.push([lo/1e5,la/1e5])}return o}
+let track=[];try{track=decode(P.get("t")||"").filter(p=>isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[1])<=90)}catch{}
+const marks=(P.get("m")||"").split(";").map(s=>s.split(",")).filter(a=>a.length>=2&&isFinite(+a[0])&&isFinite(+a[1])).map(a=>({lat:+a[0],lng:+a[1],l:(a.slice(2).join(",")||"").slice(0,60)}));
+const name=(P.get("n")||"").slice(0,90);
+const km=(()=>{let d=0;const R=6371,r=x=>x*Math.PI/180;for(let i=1;i<track.length;i++){const a=track[i-1],b=track[i];const h=Math.sin(r(b[1]-a[1])/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(r(b[0]-a[0])/2)**2;d+=2*R*Math.asin(Math.sqrt(h))}return d})();
+const T=document.getElementById("title");T.textContent=name||"Carte IGN";if(track.length>1){const s=document.createElement("small");s.textContent=Math.round(km)+" km";T.appendChild(s)}
+document.title=(name?name+" · ":"")+"Carte IGN";
+const msg=(t,ms)=>{const m=document.getElementById("msg");m.textContent=t;m.hidden=!t;clearTimeout(msg.t);if(t&&ms!==0)msg.t=setTimeout(()=>m.hidden=true,ms||5000)};
+
+const ATTR='© <a href="https://www.ign.fr" target="_blank" rel="noopener">IGN</a> – Géoplateforme';
+const wmts=(layer,fmt)=>"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER="+layer+"&STYLE=normal&FORMAT="+fmt+"&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
+const raster=(layer,fmt,maxzoom)=>({version:8,glyphs:"https://data.geopf.fr/annexes/ressources/vectorTiles/fonts/{fontstack}/{range}.pbf",sources:{r:{type:"raster",tiles:[wmts(layer,fmt)],tileSize:256,maxzoom,attribution:ATTR}},layers:[{id:"r",type:"raster",source:"r"}]});
+const BASES={plan:"https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/standard.json",topo:raster("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png",18),photo:raster("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg",19)};
+let base="plan";try{const b=localStorage.getItem("cgr-fond");if(BASES[b])base=b}catch{}
+
+const bounds=track.length>1?track.reduce((b,p)=>[[Math.min(b[0][0],p[0]),Math.min(b[0][1],p[1])],[Math.max(b[1][0],p[0]),Math.max(b[1][1],p[1])]],[[180,90],[-180,-90]]):null;
+const map=new maplibregl.Map({container:"map",style:BASES[base],bounds:bounds||[[-5.2,41.3],[9.6,51.1]],fitBoundsOptions:{padding:{top:80,bottom:50,left:40,right:60}},maxZoom:19,attributionControl:{compact:false},dragRotate:false,pitchWithRotate:false});
+map.touchZoomRotate.disableRotation();
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}),"bottom-left");
+function overlay(){
+  if(map.getSource("trk"))return;
+  map.addSource("trk",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:track}}});
+  map.addSource("mk",{type:"geojson",data:{type:"FeatureCollection",features:marks.map(m=>({type:"Feature",properties:{l:m.l},geometry:{type:"Point",coordinates:[m.lng,m.lat]}}))}});
+  map.addSource("me",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
+  const w=k=>["interpolate",["linear"],["zoom"],8,2.2*k,13,3.4*k,17,6*k];
+  if(track.length>1){
+    map.addLayer({id:"trk-h",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#fff","line-opacity":.85,"line-width":w(1.9)}});
+    map.addLayer({id:"trk",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#cf1734","line-opacity":.9,"line-width":w(1)}});
+  }
+  map.addLayer({id:"mk",type:"circle",source:"mk",paint:{"circle-radius":5.5,"circle-color":"#16201a","circle-stroke-color":"#fff","circle-stroke-width":2}});
+  map.addLayer({id:"mk-l",type:"symbol",source:"mk",layout:{"text-field":["get","l"],"text-font":["Source Sans Pro Bold"],"text-size":13,"text-anchor":"left","text-offset":[.8,-.4],"text-optional":true},paint:{"text-color":"#111714","text-halo-color":"#fff","text-halo-width":2}});
+  map.addLayer({id:"me-a",type:"circle",source:"me",paint:{"circle-radius":16,"circle-color":"#1a73e8","circle-opacity":.18}});
+  map.addLayer({id:"me",type:"circle",source:"me",paint:{"circle-radius":7,"circle-color":"#1a73e8","circle-stroke-color":"#fff","circle-stroke-width":2.5}});
+  if(here)setHere(here);
+}
+map.on("style.load",overlay);
+map.on("error",e=>{if(/standard\.json|Failed to fetch/.test(String(e?.error?.message||""))&&base==="plan"){msg("Le Plan IGN ne répond pas : je passe sur la carte classique.");setBase("topo")}});
+function setBase(b){base=b;try{localStorage.setItem("cgr-fond",b)}catch{}document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.b===b));map.setStyle(BASES[b])}
+document.querySelectorAll(".seg button").forEach(x=>{x.setAttribute("aria-pressed",x.dataset.b===base);x.onclick=()=>setBase(x.dataset.b)});
+document.getElementById("fit").onclick=()=>{if(bounds)map.fitBounds(bounds,{padding:{top:80,bottom:50,left:40,right:60},duration:400})};
+let here=null,watch=null;
+function setHere(c){here=c;map.getSource("me")?.setData({type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Point",coordinates:c}}]})}
+document.getElementById("loc").onclick=()=>{
+  if(!navigator.geolocation)return msg("Ce navigateur ne donne pas la position.");
+  if(watch!=null&&here)return map.easeTo({center:here,zoom:Math.max(map.getZoom(),15)});
+  msg("Je cherche ta position…",0);let first=true;
+  watch=navigator.geolocation.watchPosition(p=>{setHere([p.coords.longitude,p.coords.latitude]);if(first){first=false;msg("");map.easeTo({center:here,zoom:Math.max(map.getZoom(),15)})}},e=>{msg(e.code===1?"Position refusée : autorise-la dans les réglages du navigateur.":"Position introuvable pour l'instant.");navigator.geolocation.clearWatch(watch);watch=null},{enableHighAccuracy:true,maximumAge:5000});
+};
+const esc=s=>s.replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+const G=document.getElementById("gpx");if(track.length<2)G.hidden=true;
+G.onclick=()=>{
+  const x='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Carnet GR" xmlns="http://www.topografix.com/GPX/1/1">\n'+marks.map(m=>'<wpt lat="'+m.lat+'" lon="'+m.lng+'"><name>'+esc(m.l)+'</name></wpt>\n').join("")+'<trk><name>'+esc(name||"Parcours")+'</name><trkseg>\n'+track.map(p=>'<trkpt lat="'+p[1]+'" lon="'+p[0]+'"/>').join("\n")+'\n</trkseg></trk>\n</gpx>\n';
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([x],{type:"application/gpx+xml"}));a.download=(name||"parcours").replace(/[^\p{L}\p{N} _-]+/gu,"").trim().slice(0,60)+".gpx";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  msg("GPX téléchargé (tracé simplifié pour la carte).");
+};
+if(track.length<2)msg("Ouvre cette page depuis Carnet GR (bouton « Carte IGN complète ») pour voir un parcours.",9000);
+</script>
+</body>
+</html>
