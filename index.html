@@ -49,10 +49,15 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 const P = new URLSearchParams(location.hash.slice(1));
 function decode(s){const o=[];let i=0,la=0,lo=0;while(i<s.length){for(const k of [0,1]){let r=0,sh=0,b;do{b=s.charCodeAt(i++)-63;r|=(b&31)<<sh;sh+=5}while(b>=32&&i<=s.length);const d=r&1?~(r>>1):r>>1;if(k)lo+=d;else la+=d}o.push([lo/1e5,la/1e5])}return o}
 let track=[];try{track=decode(P.get("t")||"").filter(p=>isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[1])<=90)}catch{}
+const guide=track.slice();let precise=null,eles=null; // guide = tracé simplifié de l'appli ; precise = tracé calé (lon,lat)
+const osmId=(/^\d+/.exec(P.get("g")||"")||[""])[0];
 const marks=(P.get("m")||"").split(";").map(s=>s.split(",")).filter(a=>a.length>=2&&isFinite(+a[0])&&isFinite(+a[1])).map(a=>({lat:+a[0],lng:+a[1],l:(a.slice(2).join(",")||"").slice(0,60)}));
 const name=(P.get("n")||"").slice(0,90);
-const km=(()=>{let d=0;const R=6371,r=x=>x*Math.PI/180;for(let i=1;i<track.length;i++){const a=track[i-1],b=track[i];const h=Math.sin(r(b[1]-a[1])/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(r(b[0]-a[0])/2)**2;d+=2*R*Math.asin(Math.sqrt(h))}return d})();
-const T=document.getElementById("title");T.textContent=name||"Carte IGN";if(track.length>1){const s=document.createElement("small");s.textContent=Math.round(km)+" km";T.appendChild(s)}
+const hav=(a,b)=>{const r=x=>x*Math.PI/180;const h=Math.sin(r(b[1]-a[1])/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(r(b[0]-a[0])/2)**2;return 12742*Math.asin(Math.sqrt(Math.min(1,h)))}; // km, points [lon,lat]
+const lenKm=L=>{let d=0;for(let i=1;i<L.length;i++)d+=hav(L[i-1],L[i]);return d};
+const T=document.getElementById("title");
+function setTitle(){T.textContent=name||"Carte IGN";if(track.length>1){const s=document.createElement("small");s.textContent=(lenKm(track)<20?lenKm(track).toFixed(1).replace(".",","):Math.round(lenKm(track)))+" km";T.appendChild(s)}}
+setTitle();
 document.title=(name?name+" · ":"")+"Carte IGN";
 const msg=(t,ms)=>{const m=document.getElementById("msg");m.textContent=t;m.hidden=!t;clearTimeout(msg.t);if(t&&ms!==0)msg.t=setTimeout(()=>m.hidden=true,ms||5000)};
 
@@ -68,10 +73,12 @@ map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}),"bottom-left");
 function overlay(){
   if(map.getSource("trk"))return;
-  map.addSource("trk",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:track}}});
+  map.addSource("trk",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise||[]}}});
   map.addSource("mk",{type:"geojson",data:{type:"FeatureCollection",features:marks.map(m=>({type:"Feature",properties:{l:m.l},geometry:{type:"Point",coordinates:[m.lng,m.lat]}}))}});
   map.addSource("me",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
   const w=k=>["interpolate",["linear"],["zoom"],8,2.2*k,13,3.4*k,17,6*k];
+  map.addSource("gd",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise?[]:guide}}});
+  map.addLayer({id:"gd",type:"line",source:"gd",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#cf1734","line-opacity":.55,"line-width":2,"line-dasharray":[1.5,1.5]}});
   if(track.length>1){
     map.addLayer({id:"trk-h",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#fff","line-opacity":.85,"line-width":w(1.9)}});
     map.addLayer({id:"trk",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#cf1734","line-opacity":.9,"line-width":w(1)}});
@@ -98,10 +105,79 @@ document.getElementById("loc").onclick=()=>{
 const esc=s=>s.replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
 const G=document.getElementById("gpx");if(track.length<2)G.hidden=true;
 G.onclick=()=>{
-  const x='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Carnet GR" xmlns="http://www.topografix.com/GPX/1/1">\n'+marks.map(m=>'<wpt lat="'+m.lat+'" lon="'+m.lng+'"><name>'+esc(m.l)+'</name></wpt>\n').join("")+'<trk><name>'+esc(name||"Parcours")+'</name><trkseg>\n'+track.map(p=>'<trkpt lat="'+p[1]+'" lon="'+p[0]+'"/>').join("\n")+'\n</trkseg></trk>\n</gpx>\n';
+  const x='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Carnet GR" xmlns="http://www.topografix.com/GPX/1/1">\n'+marks.map(m=>'<wpt lat="'+m.lat+'" lon="'+m.lng+'"><name>'+esc(m.l)+'</name></wpt>\n').join("")+'<trk><name>'+esc(name||"Parcours")+'</name><trkseg>\n'+track.map((p,i)=>'<trkpt lat="'+p[1].toFixed(6)+'" lon="'+p[0].toFixed(6)+'">'+(eles&&eles[i]!=null?'<ele>'+eles[i]+'</ele>':'')+'</trkpt>').join("\n")+'\n</trkseg></trk>\n</gpx>\n';
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([x],{type:"application/gpx+xml"}));a.download=(name||"parcours").replace(/[^\p{L}\p{N} _-]+/gu,"").trim().slice(0,60)+".gpx";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  msg("GPX téléchargé (tracé simplifié pour la carte).");
+  msg(precise?"GPX téléchargé (tracé calé sur les chemins).":"GPX téléchargé (tracé simplifié : le calage n'est pas terminé).");
 };
+
+/* ---------- calage du tracé : le tracé de l'appli est simplifié (un point tous les ~500 m). On le cale :
+   1) sur le balisage officiel du sentier (relation OpenStreetMap, par Overpass) quand on connaît son numéro ;
+   2) sinon (ou si ça couvre mal) sur le réseau de chemins de l'IGN (BD TOPO, tronçons de route, sentiers compris).
+   Méthode (comme scripts/precise_track.py) : réseau du couloir, puis de repère en repère (tous les 1,5 km), plus court chemin
+   en pénalisant l'écart au tracé simplifié ; un morceau qui ne colle pas garde le tracé simplifié. Résultat gardé dans le navigateur. */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function getJSON(url,opt={},ms=30000){const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);try{const r=await fetch(url,Object.assign({signal:c.signal},opt));if(!r.ok)throw new Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(t)}}
+function densify(L,step=.05){const o=[L[0]];for(let i=1;i<L.length;i++){const a=L[i-1],b=L[i],n=Math.max(1,Math.floor(hav(a,b)/step));for(let k=1;k<=n;k++)o.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n])}return o}
+function nearIdx(D){const g=new Map();for(const p of D){const k=Math.floor(p[1]*900)+":"+Math.floor(p[0]*650);(g.get(k)||g.set(k,[]).get(k)).push(p)}
+  return (p,R=2)=>{const a=Math.floor(p[1]*900),b=Math.floor(p[0]*650);let best=9;for(let i=a-R;i<=a+R;i++)for(let j=b-R;j<=b+R;j++){const L=g.get(i+":"+j);if(L)for(const q of L){const d=hav(p,q);if(d<best)best=d}}return best}}
+const PEN={"Sentier":1,"Chemin":1,"Route empierrée":1,"Escalier":1.1,"Route à 1 chaussée":1.15,"osm":1};
+function graph(lines,near,buf=.6){ // lines : [{c:[[lon,lat,(z)],…],n:nature}]
+  const G=new Map(),Z=new Map(),K=p=>p[0].toFixed(6)+","+p[1].toFixed(6);
+  for(const ln of lines){const pen=PEN[ln.n]||1.6;const c=ln.c;for(let i=1;i<c.length;i++){const a=c[i-1],b=c[i];const off=near([(a[0]+b[0])/2,(a[1]+b[1])/2]);if(off>buf)continue;
+    const d=hav(a,b),w=d*pen*(1+6*off),u=K(a),v=K(b);if(u===v)continue;(G.get(u)||G.set(u,[]).get(u)).push([v,w]);(G.get(v)||G.set(v,[]).get(v)).push([u,w]);if(a[2]!=null)Z.set(u,a[2]);if(b[2]!=null)Z.set(v,b[2])}}
+  const idx=new Map();for(const k of G.keys()){const [lo,la]=k.split(",").map(Number);const key=Math.floor(la*200)+":"+Math.floor(lo*140);(idx.get(key)||idx.set(key,[]).get(key)).push([lo,la,k])}
+  return {G,Z,idx}}
+function nearestNode(N,p){let best=null,bd=9;const a=Math.floor(p[1]*200),b=Math.floor(p[0]*140);for(let i=a-1;i<=a+1;i++)for(let j=b-1;j<=b+1;j++){const L=N.idx.get(i+":"+j);if(L)for(const q of L){const d=hav(p,q);if(d<bd){bd=d;best=q[2]}}}return [best,bd]}
+function dijkstra(G,s,t,limit){const dist=new Map([[s,0]]),prev=new Map(),H=[[0,s]];
+  const push=x=>{H.push(x);let i=H.length-1;while(i){const p=(i-1)>>1;if(H[p][0]<=H[i][0])break;[H[p],H[i]]=[H[i],H[p]];i=p}};
+  const pop=()=>{const top=H[0],last=H.pop();if(H.length){H[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<H.length&&H[l][0]<H[m][0])m=l;if(r<H.length&&H[r][0]<H[m][0])m=r;if(m===i)break;[H[m],H[i]]=[H[i],H[m]];i=m}}return top};
+  while(H.length){const [c,u]=pop();if(u===t)break;if(c>(dist.get(u)??1e9)||c>limit)continue;for(const [v,w] of G.get(u)||[]){const nc=c+w;if(nc<(dist.get(v)??1e9)){dist.set(v,nc);prev.set(v,u);push([nc,v])}}}
+  if(!dist.has(t))return null;const path=[t];while(path[path.length-1]!==s)path.push(prev.get(path[path.length-1]));return path.reverse()}
+function snapOn(lines,D,near){
+  const N=graph(lines,near);if(!N.G.size)return null;
+  const marks=[0];let acc=0;for(let i=1;i<D.length;i++){acc+=hav(D[i-1],D[i]);if(acc>=1.5){marks.push(i);acc=0}}if(marks[marks.length-1]!==D.length-1)marks.push(D.length-1);
+  let out=[],z=[],ok=0,tot=0;
+  for(let m=1;m<marks.length;m++){const piece=D.slice(marks[m-1],marks[m]+1),L=lenKm(piece);tot+=L;
+    const [s,ds]=nearestNode(N,piece[0]),[t,dt]=nearestNode(N,piece[piece.length-1]);
+    const path=s&&t&&ds<.15&&dt<.15?dijkstra(N.G,s,t,L*6):null;
+    if(path){const Pp=path.map(k=>k.split(",").map(Number)),Lp=lenKm(Pp);if(Lp>=.85*L&&Lp<=1.6*L+.3){const add=out.length?Pp.slice(1):Pp;out=out.concat(add);z=z.concat((out.length===add.length?path:path.slice(1)).map(k=>N.Z.get(k)??null));ok+=L;continue}}
+    const add=out.length?piece.slice(1):piece;out=out.concat(add);z=z.concat(add.map(()=>null))}
+  // un même point repassé (aller-retour aux jonctions des morceaux, petite boucle) : on coupe ce qui est entre les deux passages
+  const P=[],E=[],seen=new Map();for(let i=0;i<out.length;i++){const k=out[i][0].toFixed(5)+","+out[i][1].toFixed(5);const j=seen.get(k);
+    if(j!=null&&P.length-j<400){for(let q=j+1;q<P.length;q++)seen.delete(P[q][0].toFixed(5)+","+P[q][1].toFixed(5));P.length=j+1;E.length=j+1;continue}
+    if(P.length&&hav(P[P.length-1],out[i])<.002)continue;seen.set(k,P.length);P.push(out[i]);E.push(z[i]==null?null:Math.round(z[i]))}
+  return {pts:P,ele:E.some(v=>v!=null)?E:null,cale:ok/Math.max(tot,1e-9)}}
+const OVERPASS=["https://overpass-api.de/api/interpreter","https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+function bboxOf(L,m=.01){let a=[180,90,-180,-90];for(const p of L){a=[Math.min(a[0],p[0]),Math.min(a[1],p[1]),Math.max(a[2],p[0]),Math.max(a[3],p[1])]}return [a[0]-m*1.4,a[1]-m,a[2]+m*1.4,a[3]+m]}
+async function osmLines(id,D){const b=bboxOf(D);const q="[out:json][timeout:40];rel("+id+");(._;>>;)->.a;way.a("+[b[1],b[0],b[3],b[2]].map(x=>x.toFixed(4)).join(",")+");out geom;";
+  for(const u of OVERPASS){try{const j=await getJSON(u,{method:"POST",body:"data="+encodeURIComponent(q),headers:{"Content-Type":"application/x-www-form-urlencoded"}},45000);
+    const L=(j.elements||[]).filter(e=>e.type==="way"&&e.geometry?.length>1).map(e=>({n:"osm",c:e.geometry.map(g=>[g.lon,g.lat])}));if(L.length)return L}catch(e){console.warn("overpass",u,e)}}
+  return null}
+async function ignLines(D,progress){const boxes=new Set();for(const p of D)boxes.add(Math.floor(p[1]/.04)+":"+Math.floor(p[0]/.04));const B=[...boxes];let done=0;const lines=[];
+  async function one(k){const [i,j]=k.split(":").map(Number);const s=i*.04-.008,w=j*.04-.011,n=s+.056,e=w+.062;let start=0;
+    for(;;){const u="https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:troncon_de_route&OUTPUTFORMAT=application/json&SRSNAME=EPSG:4326&PROPERTYNAME=nature,geometrie&COUNT=5000&STARTINDEX="+start+"&BBOX="+[w,s,e,n].map(x=>x.toFixed(4)).join(",")+",EPSG:4326";
+      let d=null;for(let t=0;t<3&&!d;t++){try{d=await getJSON(u,{},40000)}catch(e){await sleep(1500*(t+1))}}if(!d)break;
+      const F=d.features||[];for(const f of F){const g=f.geometry||{};const n=f.properties?.nature||"";(g.type==="LineString"?[g.coordinates]:g.type==="MultiLineString"?g.coordinates:[]).forEach(c=>lines.push({n,c}))}
+      start+=F.length;if(F.length<5000)break}
+    progress(++done,B.length)}
+  const Q=B.slice();await Promise.all([0,1,2,3].map(async()=>{while(Q.length)await one(Q.shift())}));return lines}
+function cacheKey(){let h=0;const s=(P.get("t")||"")+"|"+osmId;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return "cgr-cale-v1-"+h}
+function usePrecise(r,src){precise=r.pts;eles=r.ele;track=precise;map.getSource("trk")?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise}});map.getSource("gd")?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[]}});setTitle();
+  const pc=Math.round(r.cale*100);msg(pc>=97?"Tracé calé "+src+".":"Tracé calé "+src+" ("+pc+" % ; le reste, en pointillé fin, suit le tracé simplifié).",6000)}
+async function calage(){
+  if(guide.length<2)return;
+  try{const c=JSON.parse(localStorage.getItem(cacheKey())||"null");if(c?.pts?.length>1){await mapReady;return usePrecise(c,c.src)}}catch{}
+  const D=densify(guide),near=nearIdx(D);if(lenKm(guide)>400){msg("Parcours très long : tracé simplifié (ouvre une section plus courte pour le tracé précis).",8000);return}
+  msg("Je cale le tracé sur les sentiers balisés…",0);
+  let best=null,src="";
+  if(osmId){const L=await osmLines(osmId,D);if(L){const r=snapOn(L,D,near);if(r&&r.cale>=.8){best=r;src="sur le balisage officiel du sentier (OpenStreetMap)"}}}
+  if(!best){const L=await ignLines(D,(a,b)=>msg("Je cale le tracé sur les chemins IGN… "+Math.round(100*a/b)+" %",0));const r=L.length?snapOn(L,D,near):null;if(r&&r.cale>=.3){best=r;src="sur les chemins de l'IGN"}}
+  await mapReady;
+  if(!best)return msg("Je n'ai pas pu caler le tracé : tracé simplifié affiché (pointillés).",8000);
+  usePrecise(best,src);try{localStorage.setItem(cacheKey(),JSON.stringify({pts:best.pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6)]),ele:best.ele,cale:best.cale,src}))}catch{}
+}
+const mapReady=new Promise(r=>{if(map.loaded())r();else map.once("load",r)});
+calage();
 if(track.length<2)msg("Ouvre cette page depuis Carnet GR (bouton « Carte IGN complète ») pour voir un parcours.",9000);
 </script>
 </body>
