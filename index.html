@@ -20,6 +20,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 .seg button,.btn{font:inherit;color:inherit;border:0;background:none;border-radius:999px;padding:6px 12px;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
 .side{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);display:flex;flex-direction:column;gap:8px;z-index:5}
+.side .btn[aria-pressed=true]{background:var(--fg);color:var(--bg)}
 .side .btn{width:44px;height:44px;padding:0;font-size:20px;line-height:1;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);box-shadow:0 2px 10px rgba(0,0,0,.12)}
 #msg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(14px,env(safe-area-inset-bottom)) + 40px);z-index:6;max-width:min(90vw,460px);text-align:center}
 #msg[hidden]{display:none}
@@ -37,6 +38,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
   </div>
 </div>
 <div class="side">
+  <button class="btn pill" id="d3" title="Relief en 3D" aria-label="Relief en 3D" aria-pressed="false" style="font-size:14px;font-weight:700">3D</button>
   <button class="btn pill" id="fit" title="Voir tout le parcours" aria-label="Voir tout le parcours">⤢</button>
   <button class="btn pill" id="loc" title="Ma position" aria-label="Ma position">◎</button>
   <button class="btn pill" id="gpx" title="Télécharger le GPX" aria-label="Télécharger le GPX">⇩</button>
@@ -68,11 +70,23 @@ const BASES={plan:"https://data.geopf.fr/annexes/ressources/vectorTiles/styles/P
 let base="plan";try{const b=localStorage.getItem("cgr-fond");if(BASES[b])base=b}catch{}
 
 const bounds=track.length>1?track.reduce((b,p)=>[[Math.min(b[0][0],p[0]),Math.min(b[0][1],p[1])],[Math.max(b[1][0],p[0]),Math.max(b[1][1],p[1])]],[[180,90],[-180,-90]]):null;
-const map=new maplibregl.Map({container:"map",style:BASES[base],bounds:bounds||[[-5.2,41.3],[9.6,51.1]],fitBoundsOptions:{padding:{top:80,bottom:50,left:40,right:60}},maxZoom:19,attributionControl:{compact:false},dragRotate:false,pitchWithRotate:false});
+const map=new maplibregl.Map({container:"map",style:BASES[base],bounds:bounds||[[-5.2,41.3],[9.6,51.1]],fitBoundsOptions:{padding:{top:80,bottom:50,left:40,right:60}},maxZoom:19,attributionControl:{compact:false},dragRotate:false,pitchWithRotate:true,maxPitch:75});
 map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}),"bottom-left");
+let relief=false;try{relief=localStorage.getItem("cgr-3d")==="1"}catch{}
+const DEM={type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:14,attribution:"Relief © Mapzen / AWS Terrain Tiles"};
+function applyRelief(){ // relief réel (MNT mondial) : le fond de carte et le tracé épousent le terrain ; inclinaison et rotation seulement en 3D
+  if(!map.getSource("dem"))map.addSource("dem",DEM);
+  if(!map.getLayer("hill"))map.addLayer({id:"hill",type:"hillshade",source:"dem",paint:{"hillshade-exaggeration":.35,"hillshade-shadow-color":"#3a4a3f","hillshade-highlight-color":"#ffffff","hillshade-accent-color":"#5c6a61"}},map.getLayer("gd")?"gd":undefined);
+  map.setLayoutProperty("hill","visibility",relief?"visible":"none");
+  map.setTerrain(relief?{source:"dem",exaggeration:1.5}:null);
+  map.dragRotate[relief?"enable":"disable"]();map.touchZoomRotate[relief?"enableRotation":"disableRotation"]();map.touchPitch?.[relief?"enable":"disable"]?.();
+  document.getElementById("d3").setAttribute("aria-pressed",relief);
+}
+document.getElementById("d3").onclick=()=>{relief=!relief;try{localStorage.setItem("cgr-3d",relief?"1":"0")}catch{}
+  applyRelief();if(relief){map.easeTo({pitch:62,bearing:map.getBearing()||-20,duration:900});msg("Relief en 3D : deux doigts pour incliner et tourner.",5000)}else map.easeTo({pitch:0,bearing:0,duration:600})};
 function overlay(){
-  if(map.getSource("trk"))return;
+  if(map.getSource("trk")){applyRelief();return}
   map.addSource("trk",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise||[]}}});
   map.addSource("mk",{type:"geojson",data:{type:"FeatureCollection",features:marks.map(m=>({type:"Feature",properties:{l:m.l},geometry:{type:"Point",coordinates:[m.lng,m.lat]}}))}});
   map.addSource("me",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
@@ -88,6 +102,7 @@ function overlay(){
   map.addLayer({id:"me-a",type:"circle",source:"me",paint:{"circle-radius":16,"circle-color":"#1a73e8","circle-opacity":.18}});
   map.addLayer({id:"me",type:"circle",source:"me",paint:{"circle-radius":7,"circle-color":"#1a73e8","circle-stroke-color":"#fff","circle-stroke-width":2.5}});
   if(here)setHere(here);
+  applyRelief();
 }
 map.on("style.load",overlay);
 map.on("error",e=>{if(/standard\.json|Failed to fetch/.test(String(e?.error?.message||""))&&base==="plan"){msg("Le Plan IGN ne répond pas : je passe sur la carte classique.");setBase("topo")}});
@@ -176,6 +191,7 @@ async function calage(){
   if(!best)return msg("Je n'ai pas pu caler le tracé : tracé simplifié affiché (pointillés).",8000);
   usePrecise(best,src);try{localStorage.setItem(cacheKey(),JSON.stringify({pts:best.pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6)]),ele:best.ele,cale:best.cale,src}))}catch{}
 }
+map.once('load',()=>{if(relief)map.easeTo({pitch:62,duration:0})});
 const mapReady=new Promise(r=>{if(map.loaded())r();else map.once("load",r)});
 calage();
 if(track.length<2)msg("Ouvre cette page depuis Carnet GR (bouton « Carte IGN complète ») pour voir un parcours.",9000);
