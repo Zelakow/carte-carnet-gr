@@ -52,7 +52,8 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
 <div class="side">
   <button class="btn pill" id="d3" title="Relief en 3D" aria-label="Relief en 3D" aria-pressed="false" style="font-size:14px;font-weight:700">3D</button>
   <button class="btn pill" id="prb" title="Profil d'altitude" aria-label="Profil d'altitude" aria-pressed="false" style="font-size:13px;font-weight:700">⛰</button>
-  <button class="btn pill" id="fly" title="Survol en 3D du parcours" aria-label="Survol en 3D du parcours" aria-pressed="false">▶</button>
+  <button class="btn pill" id="fly3" title="Survol du parcours en relief (3D)" aria-label="Survol en relief 3D" aria-pressed="false" style="font-size:13px;font-weight:700">▶3D</button>
+  <button class="btn pill" id="fly2" title="Survol du parcours vu du dessus (2D)" aria-label="Survol vu du dessus 2D" aria-pressed="false" style="font-size:13px;font-weight:700">▶2D</button>
   <button class="btn pill" id="lyb" title="Couches" aria-label="Couches" aria-pressed="false">☰</button>
   <button class="btn pill" id="off" title="Garder la zone hors-ligne" aria-label="Garder la zone hors-ligne">⬇︎</button>
   <button class="btn pill" id="fit" title="Voir tout le parcours" aria-label="Voir tout le parcours">⤢</button>
@@ -277,16 +278,27 @@ function live(c){const el=$("live");if(!SM||SM.length<2){return}let bi=0,bd=99;S
   el.classList.add("on");const off=bd>.15;el.classList.toggle("warn",off);
   el.textContent=off?`Tu t'écartes du tracé (${Math.round(bd*1000)} m). Retour au plus près : ${fmtKm(SM[bi].d)} du départ.`:`Il reste ${fmtKm(rem)} · +${Math.round(up)} m · arrivée vers ${hm}`;
   if(!off)curAt(bi)}
-/* survol 3D du parcours */
-let flying=0;
-function stopFly(){if(!flying)return;cancelAnimationFrame(flying);flying=0;$("fly").setAttribute("aria-pressed",false);$("fly").textContent="▶"}
-$("fly").onclick=()=>{if(flying)return stopFly();const L=(precise||track);if(!L||L.length<2)return;
-  if(!relief)$("d3").click();const S=sample(L,Math.max(.03,lenKm(L)/700));const dur=Math.min(90e3,Math.max(25e3,lenKm(L)*1500));$("fly").setAttribute("aria-pressed",true);$("fly").textContent="■";showProf(false);
+/* survol du parcours : ▶3D = caméra basse dans le relief (le terrain s'active tout seul), ▶2D = vue du dessus, nord en haut */
+let flying=0,flyMode=null,flyRestore=null;
+function setFlyBtn(m){["3","2"].forEach(k=>{const b=$("fly"+k);b.setAttribute("aria-pressed",m===k);b.textContent=m===k?"■":("▶"+k+"D")})}
+function stopFly(){if(!flying&&!flyMode)return;const m=flyMode;cancelAnimationFrame(flying);flying=0;flyMode=null;setFlyBtn(null);
+  try{if(m==="3"&&relief)map.setTerrain({source:"dem",exaggeration:1.5});if(m==="2"&&flyRestore?.relief){relief=true;store.set("cgr-3d","1");applyRelief()}}catch{}flyRestore=null}
+async function startFly(mode){
+  if(flyMode)return stopFly();const L=(precise||track);if(!L||L.length<2)return;
+  flyMode=mode;setFlyBtn(mode);showProf(false);flyRestore={relief};
+  if(mode==="3"){ // relief obligatoire : on l'active, on attend que les altitudes soient là, puis on renforce un peu le relief
+    if(!relief){relief=true;store.set("cgr-3d","1");applyRelief()}
+    msg("Je charge le relief…",0);map.jumpTo({pitch:70,zoom:14.2});await new Promise(r=>{let done=false;const f=()=>{if(!done){done=true;r()}};map.once("idle",f);setTimeout(f,4500)});msg("");if(flyMode!==mode)return;
+    try{map.setTerrain({source:"dem",exaggeration:1.9})}catch{}
+  }else{ if(relief){relief=false;store.set("cgr-3d","0");applyRelief()} map.jumpTo({pitch:0,bearing:0,zoom:14}); }
+  const S2=sample(L,Math.max(.03,lenKm(L)/700));const dur=Math.min(120e3,Math.max(30e3,lenKm(L)*(mode==="3"?1800:1400)));
   const t0=performance.now();let brg=map.getBearing();const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
-  const step=now=>{const t=Math.min(1,(now-t0)/dur),f=ease(t)*(S.length-1),i=Math.floor(f),a=S[i],b=S[Math.min(S.length-1,i+1)],k=f-i,ll=[a.ll[0]+(b.ll[0]-a.ll[0])*k,a.ll[1]+(b.ll[1]-a.ll[1])*k];
-    const ahead=S[Math.min(S.length-1,i+Math.ceil(S.length/40))].ll,tb=Math.atan2((ahead[0]-ll[0])*Math.cos(ll[1]*Math.PI/180),ahead[1]-ll[1])*180/Math.PI;let dd=((tb-brg+540)%360)-180;brg+=dd*.04;
-    map.jumpTo({center:ll,bearing:brg,pitch:68,zoom:13.6});if(t<1)flying=requestAnimationFrame(step);else stopFly()};
-  map.jumpTo({center:S[0].ll,pitch:68,zoom:13.6});flying=requestAnimationFrame(step)};
+  const step=now=>{const t=Math.min(1,(now-t0)/dur),f=ease(t)*(S2.length-1),i=Math.floor(f),a=S2[i],b=S2[Math.min(S2.length-1,i+1)],k=f-i,ll=[a.ll[0]+(b.ll[0]-a.ll[0])*k,a.ll[1]+(b.ll[1]-a.ll[1])*k];
+    if(mode==="3"){const ahead=S2[Math.min(S2.length-1,i+Math.ceil(S2.length/40))].ll,tb=Math.atan2((ahead[0]-ll[0])*Math.cos(ll[1]*Math.PI/180),ahead[1]-ll[1])*180/Math.PI;let dd=((tb-brg+540)%360)-180;brg+=dd*.04;map.jumpTo({center:ll,bearing:brg,pitch:70,zoom:14.2})}
+    else map.jumpTo({center:ll,bearing:0,pitch:0,zoom:14});
+    if(t<1)flying=requestAnimationFrame(step);else stopFly()};
+  map.jumpTo({center:S2[0].ll});flying=requestAnimationFrame(step)}
+$("fly3").onclick=()=>startFly("3");$("fly2").onclick=()=>startFly("2");
 ["mousedown","touchstart","wheel"].forEach(e=>map.getCanvas().addEventListener(e,stopFly,{passive:true}));
 /* hors-ligne : service worker (cache des tuiles déjà vues) + téléchargement de la zone du parcours */
 if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
