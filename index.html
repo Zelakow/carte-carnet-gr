@@ -120,6 +120,9 @@ function overlay(){
   const w=k=>["interpolate",["linear"],["zoom"],8,2.2*k,13,3.4*k,17,6*k];
   map.addSource("gd",{type:"geojson",data:{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise?[]:guide}}});
   map.addLayer({id:"gd",type:"line",source:"gd",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#cf1734","line-opacity":.55,"line-width":2,"line-dasharray":[1.5,1.5]}});
+  // approche à pied gare ↔ sentier (repères « Départ · gare … » / « Arrivée · gare … » envoyés par l'appli) : pointillés verts
+  if(track.length>1){const T0=track[0],T1=track[track.length-1],ap=marks.filter(m=>/^(Départ|Arrivée) · gare/.test(m.l)).map(m=>({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[[m.lng,m.lat],/^Départ/.test(m.l)?T0:T1]}}));
+    if(ap.length){map.addSource("ap",{type:"geojson",data:{type:"FeatureCollection",features:ap}});map.addLayer({id:"ap",type:"line",source:"ap",layout:{"line-cap":"round"},paint:{"line-color":"#2c7a4c","line-width":3,"line-dasharray":[1.2,1.4]}})}}
   if(track.length>1){
     map.addLayer({id:"trk-h",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#fff","line-opacity":.85,"line-width":w(1.9)}});
     map.addLayer({id:"trk",type:"line",source:"trk",layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":"#cf1734","line-opacity":.9,"line-width":w(1)}});
