@@ -25,6 +25,18 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 #msg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(14px,env(safe-area-inset-bottom)) + 40px);z-index:6;max-width:min(90vw,460px);text-align:center}
 #msg[hidden]{display:none}
 .maplibregl-ctrl-attrib{font-size:11px}
+
+.side{flex-wrap:wrap-reverse;max-height:calc(100vh - 150px);justify-content:flex-start;align-content:flex-end;gap:8px}
+#prof{position:fixed;left:max(10px,env(safe-area-inset-left));right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));z-index:4;padding:8px 12px 6px;border-radius:18px;display:none}
+#prof.on{display:block}
+#prof .ph{display:flex;gap:12px;flex-wrap:wrap;align-items:baseline;font-size:13px;color:var(--mut)}#prof .ph b{color:var(--fg)}
+#prof svg{width:100%;height:96px;display:block;touch-action:none;cursor:crosshair}
+#prof .tip{position:absolute;top:2px;right:12px;font-size:13px;font-weight:650}
+#live{position:fixed;left:50%;transform:translateX(-50%);top:calc(max(10px,env(safe-area-inset-top)) + 54px);z-index:6;max-width:min(92vw,520px);text-align:center;font-weight:650;display:none}
+#live.on{display:block}#live.warn{background:#cf1734;color:#fff}
+#lay{position:fixed;right:calc(max(10px,env(safe-area-inset-right)) + 56px);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);z-index:6;padding:10px 14px;border-radius:16px;display:none;font-size:14px}
+#lay.on{display:block}#lay label{display:flex;gap:8px;align-items:center;padding:5px 0;white-space:nowrap}#lay small{display:block;color:var(--mut);font-size:12px;margin-top:4px}
+body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}body.hasprof #msg{bottom:calc(max(14px,env(safe-area-inset-bottom)) + 170px)}body.hasprof #lay{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}
 </style>
 </head>
 <body>
@@ -39,11 +51,18 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 </div>
 <div class="side">
   <button class="btn pill" id="d3" title="Relief en 3D" aria-label="Relief en 3D" aria-pressed="false" style="font-size:14px;font-weight:700">3D</button>
+  <button class="btn pill" id="prb" title="Profil d'altitude" aria-label="Profil d'altitude" aria-pressed="false" style="font-size:13px;font-weight:700">⛰</button>
+  <button class="btn pill" id="fly" title="Survol en 3D du parcours" aria-label="Survol en 3D du parcours" aria-pressed="false">▶</button>
+  <button class="btn pill" id="lyb" title="Couches" aria-label="Couches" aria-pressed="false">☰</button>
+  <button class="btn pill" id="off" title="Garder la zone hors-ligne" aria-label="Garder la zone hors-ligne">⬇︎</button>
   <button class="btn pill" id="fit" title="Voir tout le parcours" aria-label="Voir tout le parcours">⤢</button>
   <button class="btn pill" id="loc" title="Ma position" aria-label="Ma position">◎</button>
   <button class="btn pill" id="gpx" title="Télécharger le GPX" aria-label="Télécharger le GPX">⇩</button>
 </div>
 <div class="pill" id="msg" hidden></div>
+<div class="pill" id="live"></div>
+<div class="pill" id="lay"><label><input type="checkbox" id="l-slope"> Pentes de montagne (&gt; 30° = avalanche)</label><label><input type="checkbox" id="l-trail"> Sentiers balisés (Waymarked Trails)</label><label><input type="checkbox" id="l-hill"> Ombrage du relief</label><small>Pentes : IGN · sentiers : waymarkedtrails.org, © OpenStreetMap</small></div>
+<div class="pill" id="prof"><div class="ph" id="prof-h"></div><div class="tip" id="prof-t"></div><svg id="prof-s" viewBox="0 0 600 96" preserveAspectRatio="none"></svg></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 /* Carnet GR — carte IGN complète. Le parcours arrive dans l'adresse (après #) : rien n'est enregistré ni envoyé ailleurs qu'à l'IGN (fonds de carte).
@@ -106,7 +125,7 @@ function overlay(){
 }
 map.on("style.load",overlay);
 map.on("error",e=>{if(/standard\.json|Failed to fetch/.test(String(e?.error?.message||""))&&base==="plan"){msg("Le Plan IGN ne répond pas : je passe sur la carte classique.");setBase("topo")}});
-function setBase(b){base=b;try{localStorage.setItem("cgr-fond",b)}catch{}document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.b===b));map.setStyle(BASES[b])}
+function setBase(b){base=b;try{localStorage.setItem("cgr-fond",b)}catch{}document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.b===b));map.setStyle(BASES[b],{diff:false})}
 document.querySelectorAll(".seg button").forEach(x=>{x.setAttribute("aria-pressed",x.dataset.b===base);x.onclick=()=>setBase(x.dataset.b)});
 document.getElementById("fit").onclick=()=>{if(bounds)map.fitBounds(bounds,{padding:{top:80,bottom:50,left:40,right:60},duration:400})};
 let here=null,watch=null;
@@ -178,6 +197,7 @@ async function ignLines(D,progress){const boxes=new Set();for(const p of D)boxes
   const Q=B.slice();await Promise.all([0,1,2,3].map(async()=>{while(Q.length)await one(Q.shift())}));return lines}
 function cacheKey(){let h=0;const s=(P.get("t")||"")+"|"+osmId;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return "cgr-cale-v1-"+h}
 function usePrecise(r,src){precise=r.pts;eles=r.ele;track=precise;map.getSource("trk")?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:precise}});map.getSource("gd")?.setData({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[]}});setTitle();
+  try{onTrack()}catch(e){console.warn(e)}
   const pc=Math.round(r.cale*100);msg(pc>=97?"Tracé calé "+src+".":"Tracé calé "+src+" ("+pc+" % ; le reste, en pointillé fin, suit le tracé simplifié).",6000)}
 async function calage(){
   if(guide.length<2)return;
@@ -195,6 +215,96 @@ map.once('load',()=>{if(relief)map.easeTo({pitch:62,duration:0})});
 const mapReady=new Promise(r=>{if(map.loaded())r();else map.once("load",r)});
 calage();
 if(track.length<2)msg("Ouvre cette page depuis Carnet GR (bouton « Carte IGN complète ») pour voir un parcours.",9000);
+</script>
+<script>
+/* ---------- extras : profil d'altitude, suivi en direct, survol 3D, couches, hors-ligne ---------- */
+const $=id=>document.getElementById(id);
+const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+const ALTI="https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json";
+let SM=null; // échantillons le long du tracé : [{d (km), ll:[lon,lat], z}]
+function sample(L,step){const o=[],cum=[0];for(let i=1;i<L.length;i++)cum.push(cum[i-1]+hav(L[i-1],L[i]));const tot=cum[cum.length-1];if(tot<=0)return o;
+  let j=1;for(let d=0;d<=tot+1e-9;d+=step){while(j<L.length-1&&cum[j]<d)j++;const a=L[j-1],b=L[j],seg=cum[j]-cum[j-1]||1,f=Math.min(1,Math.max(0,(d-cum[j-1])/seg));o.push({d,ll:[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]})}
+  const l=L[L.length-1];if(o[o.length-1].d<tot-.02)o.push({d:tot,ll:[l[0],l[1]]});return o}
+async function altitudes(P){const out=[];for(let k=0;k<P.length;k+=150){const ch=P.slice(k,k+150);let ok=false;
+  for(let t=0;t<3&&!ok;t++){try{const u=ALTI+"?lon="+ch.map(p=>p.ll[0].toFixed(5)).join("|")+"&lat="+ch.map(p=>p.ll[1].toFixed(5)).join("|")+"&resource=ign_rge_alti_wld&zonly=true";const r=await fetch(u);if(!r.ok)throw 0;const j=await r.json();ch.forEach((p,i)=>{const e=j.elevations?.[i];out.push(e==null||e<-500?null:e)});ok=true}catch{await new Promise(r=>setTimeout(r,800*(t+1)))}}
+  if(!ok)ch.forEach(()=>out.push(null))}return out}
+function fillGaps(z){let last=null;const o=z.slice();for(let i=0;i<o.length;i++){if(o[i]==null)o[i]=last;else last=o[i]}last=null;for(let i=o.length-1;i>=0;i--){if(o[i]==null)o[i]=last;else last=o[i]}return o}
+function stats(S){let up=0,dn=0,ref=S[0].z,mn=1e9,mx=-1e9;for(const p of S){mn=Math.min(mn,p.z);mx=Math.max(mx,p.z);if(p.z-ref>=3){up+=p.z-ref;ref=p.z}else if(ref-p.z>=3){dn+=ref-p.z;ref=p.z}}return{up,dn,mn,mx}}
+const slopeCol=g=>{g=Math.abs(g);return g<8?"#3f9d5a":g<15?"#c8b632":g<25?"#e0832e":"#cf1734"};
+const fmtKm=k=>(k<10?k.toFixed(1):Math.round(k)).toString().replace(".",",")+" km";
+let profKey="";
+async function onTrack(){
+  const L=(precise||track);if(!L||L.length<2)return;const key=L.length+"|"+L[0]+"|"+L[L.length-1];if(key===profKey)return;profKey=key;
+  const tot=lenKm(L);const S=sample(L,Math.max(.05,tot/450));
+  const ck="cgr-alt-v1-"+key.replace(/[^\w.|-]/g,"");let z=null;try{z=JSON.parse(store.get(ck)||"null")}catch{}
+  if(!z||z.length!==S.length){z=await altitudes(S);store.set(ck,JSON.stringify(z.map(v=>v==null?null:Math.round(v))))}
+  if(key!==profKey)return;
+  if(z.every(v=>v==null)){SM=null;$("prof-h").textContent="Altitudes indisponibles ici (hors France ?)";return}
+  const zz=fillGaps(z);const sm=zz.map((v,i)=>{const a=zz[Math.max(0,i-1)],b=zz[Math.min(zz.length-1,i+1)];return(a+v+b)/3});
+  S.forEach((p,i)=>p.z=sm[i]);SM=S;drawProf();
+  if(store.get("cgr-prof")!=="0")showProf(true)}
+function drawProf(){if(!SM)return;const st=stats(SM),tot=SM[SM.length-1].d,W=600,H=96,pad=4,lo=Math.floor((st.mn-10)/50)*50,hi=Math.ceil((st.mx+10)/50)*50;
+  const X=d=>d/tot*W,Y=z=>H-pad-(z-lo)/(hi-lo||1)*(H-2*pad-8);let svg="";
+  for(let i=1;i<SM.length;i++){const a=SM[i-1],b=SM[i],g=(b.z-a.z)/((b.d-a.d)*1000||1)*100;svg+=`<path d="M${X(a.d).toFixed(1)} ${Y(a.z).toFixed(1)}L${X(b.d).toFixed(1)} ${Y(b.z).toFixed(1)}L${X(b.d).toFixed(1)} ${H}L${X(a.d).toFixed(1)} ${H}Z" fill="${slopeCol(g)}" fill-opacity=".55" stroke="${slopeCol(g)}" stroke-width="1.4"/>`}
+  marks.forEach(m=>{let bi=0,bd=9;SM.forEach((p,i)=>{const d=hav(p.ll,[m.lng,m.lat]);if(d<bd){bd=d;bi=i}});if(bd<1.5)svg+=`<line x1="${X(SM[bi].d)}" x2="${X(SM[bi].d)}" y1="0" y2="${H}" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="3 3"/>`});
+  svg+='<line id="prof-c" x1="-9" x2="-9" y1="0" y2="'+H+'" stroke="currentColor" stroke-width="1.5"/>';$("prof-s").innerHTML=svg;
+  $("prof-h").innerHTML=`<span><b>${fmtKm(tot)}</b></span><span>↑ <b>${Math.round(st.up)} m</b></span><span>↓ <b>${Math.round(st.dn)} m</b></span><span>${Math.round(st.mn)} – ${Math.round(st.mx)} m</span><span style="margin-left:auto;font-size:12px">pente : <i style="color:#3f9d5a">■</i> douce <i style="color:#c8b632">■</i> moyenne <i style="color:#e0832e">■</i> raide <i style="color:#cf1734">■</i> très raide</span>`}
+function showProf(on){$("prof").classList.toggle("on",on);document.body.classList.toggle("hasprof",on);$("prb").setAttribute("aria-pressed",on);store.set("cgr-prof",on?"1":"0")}
+$("prb").onclick=()=>{if(!SM)return msg("Le profil arrive : je cherche les altitudes…");showProf(!$("prof").classList.contains("on"))};
+function curAt(i){const p=SM[i];if(!p)return;const lo=SM,tot=SM[SM.length-1].d;const c=$("prof-c");if(c){c.setAttribute("x1",p.d/tot*600);c.setAttribute("x2",p.d/tot*600)}
+  const a=SM[Math.max(0,i-2)],b=SM[Math.min(SM.length-1,i+2)],g=(b.z-a.z)/((b.d-a.d)*1000||1)*100;$("prof-t").textContent=`${fmtKm(p.d)} · ${Math.round(p.z)} m · pente ${g>0?"+":""}${Math.round(g)} %`;
+  map.getSource("cur")?.setData({type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Point",coordinates:p.ll}}]})}
+function profMove(ev){if(!SM)return;const r=$("prof-s").getBoundingClientRect(),f=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width)),d=f*SM[SM.length-1].d;let i=0;while(i<SM.length-1&&SM[i].d<d)i++;curAt(i)}
+$("prof-s").addEventListener("pointerdown",e=>{profMove(e);$("prof-s").setPointerCapture(e.pointerId)});$("prof-s").addEventListener("pointermove",e=>{if(e.buttons||e.pointerType==="mouse")profMove(e)});
+/* repère du profil sur la carte + couches optionnelles (à chaque changement de fond) */
+const OVL={slope:{id:"o-slope",tiles:wmts("GEOGRAPHICALGRIDSYSTEMS.SLOPES.MOUNTAIN","image/png"),op:.6,max:16,attr:"Pentes © IGN"},trail:{id:"o-trail",tiles:"https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png",op:.9,max:18,attr:"Sentiers © waymarkedtrails.org, © OpenStreetMap"}};
+const on={slope:store.get("cgr-l-slope")==="1",trail:store.get("cgr-l-trail")==="1",hill:store.get("cgr-l-hill")==="1"};
+function extrasStyle(){
+  if(!map.getSource("cur")){map.addSource("cur",{type:"geojson",data:{type:"FeatureCollection",features:[]}});map.addLayer({id:"cur",type:"circle",source:"cur",paint:{"circle-radius":7,"circle-color":"#fff","circle-stroke-color":"#16201a","circle-stroke-width":3}})}
+  for(const [k,o] of Object.entries(OVL)){if(!on[k])continue;if(!map.getSource(o.id))map.addSource(o.id,{type:"raster",tiles:[o.tiles],tileSize:256,maxzoom:o.max,attribution:o.attr});if(!map.getLayer(o.id))map.addLayer({id:o.id,type:"raster",source:o.id,paint:{"raster-opacity":o.op}},map.getLayer("gd")?"gd":"cur")}
+  if(map.getLayer("hill")&&on.hill&&!relief)map.setLayoutProperty("hill","visibility","visible")}
+map.on("style.load",()=>setTimeout(extrasStyle,0));if(map.isStyleLoaded())extrasStyle();
+function setOvl(k,v){on[k]=v;store.set("cgr-l-"+k,v?"1":"0");if(k==="hill"){if(map.getLayer("hill"))map.setLayoutProperty("hill","visibility",(v||relief)?"visible":"none");return}
+  const o=OVL[k];if(v)extrasStyle();else if(map.getLayer(o.id)){map.removeLayer(o.id);map.removeSource(o.id)}}
+for(const k of ["slope","trail","hill"]){const c=$("l-"+k);c.checked=on[k];c.onchange=()=>setOvl(k,c.checked)}
+$("lyb").onclick=()=>{const v=!$("lay").classList.contains("on");$("lay").classList.toggle("on",v);$("lyb").setAttribute("aria-pressed",v)};
+/* suivi en direct : distance restante, dénivelé restant, heure d'arrivée, écart au tracé */
+const _setHere=setHere;
+setHere=function(c){_setHere(c);try{live(c)}catch(e){console.warn(e)}};
+function live(c){const el=$("live");if(!SM||SM.length<2){return}let bi=0,bd=99;SM.forEach((p,i)=>{const d=hav(p.ll,c);if(d<bd){bd=d;bi=i}});
+  const tot=SM[SM.length-1].d,rem=tot-SM[bi].d;let up=0;for(let i=bi+1;i<SM.length;i++)if(SM[i].z>SM[i-1].z)up+=SM[i].z-SM[i-1].z;
+  const h=rem/5+up/600,eta=new Date(Date.now()+h*3600e3),hm=eta.getHours()+" h "+String(eta.getMinutes()).padStart(2,"0");
+  el.classList.add("on");const off=bd>.15;el.classList.toggle("warn",off);
+  el.textContent=off?`Tu t'écartes du tracé (${Math.round(bd*1000)} m). Retour au plus près : ${fmtKm(SM[bi].d)} du départ.`:`Il reste ${fmtKm(rem)} · +${Math.round(up)} m · arrivée vers ${hm}`;
+  if(!off)curAt(bi)}
+/* survol 3D du parcours */
+let flying=0;
+function stopFly(){if(!flying)return;cancelAnimationFrame(flying);flying=0;$("fly").setAttribute("aria-pressed",false);$("fly").textContent="▶"}
+$("fly").onclick=()=>{if(flying)return stopFly();const L=(precise||track);if(!L||L.length<2)return;
+  if(!relief)$("d3").click();const S=sample(L,Math.max(.03,lenKm(L)/700));const dur=Math.min(90e3,Math.max(25e3,lenKm(L)*1500));$("fly").setAttribute("aria-pressed",true);$("fly").textContent="■";showProf(false);
+  const t0=performance.now();let brg=map.getBearing();const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+  const step=now=>{const t=Math.min(1,(now-t0)/dur),f=ease(t)*(S.length-1),i=Math.floor(f),a=S[i],b=S[Math.min(S.length-1,i+1)],k=f-i,ll=[a.ll[0]+(b.ll[0]-a.ll[0])*k,a.ll[1]+(b.ll[1]-a.ll[1])*k];
+    const ahead=S[Math.min(S.length-1,i+Math.ceil(S.length/40))].ll,tb=Math.atan2((ahead[0]-ll[0])*Math.cos(ll[1]*Math.PI/180),ahead[1]-ll[1])*180/Math.PI;let dd=((tb-brg+540)%360)-180;brg+=dd*.04;
+    map.jumpTo({center:ll,bearing:brg,pitch:68,zoom:13.6});if(t<1)flying=requestAnimationFrame(step);else stopFly()};
+  map.jumpTo({center:S[0].ll,pitch:68,zoom:13.6});flying=requestAnimationFrame(step)};
+["mousedown","touchstart","wheel"].forEach(e=>map.getCanvas().addEventListener(e,stopFly,{passive:true}));
+/* hors-ligne : service worker (cache des tuiles déjà vues) + téléchargement de la zone du parcours */
+if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+const tileXY=(lon,lat,z)=>{const n=2**z;return[Math.floor((lon+180)/360*n),Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*n)]};
+$("off").onclick=async()=>{
+  if(!("caches" in window)||!navigator.serviceWorker?.controller)return msg("Le mode hors-ligne s'active après une première visite : recharge la page puis réessaie.",7000);
+  const L=(precise||track);if(!L||L.length<2)return msg("Aucun parcours à garder.");const S=sample(L,.25).map(p=>p.ll);
+  let style=null;try{style=await (await fetch(BASES.plan)).json()}catch{}
+  const vec=style&&Object.values(style.sources||{}).find(s=>s.type==="vector"&&s.tiles?.length);const urls=new Set();
+  const add=(tpl,z0,z1,rad,sub)=>{for(let z=z0;z<=z1;z++){const t=new Set();for(const p of S){const [x,y]=tileXY(p[0],p[1],z);for(let a=-rad;a<=rad;a++)for(let b=-rad;b<=rad;b++)t.add((x+a)+"/"+(y+b))}for(const k of t){const [x,y]=k.split("/");urls.add(tpl.replace("{z}",z).replace("{x}",x).replace("{y}",y))}}};
+  if(vec)add(vec.tiles[0],9,Math.min(vec.maxzoom||15,15),1);
+  add(wmts("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png"),10,16,0);
+  add(DEM.tiles[0],9,13,1);
+  const list=[...urls];if(list.length>6000)return msg("Parcours trop long pour le hors-ligne ("+list.length+" tuiles) : ouvre une section plus courte.",8000);
+  let done=0,bytes=0;const b=$("off");b.disabled=true;let i=0;
+  async function w(){while(i<list.length){const u=list[i++];try{const r=await fetch(u);if(r.ok){const c=await r.clone().blob();bytes+=c.size}}catch{}done++;if(done%10===0||done===list.length)msg("Je garde la zone… "+Math.round(100*done/list.length)+" % ("+(bytes/1e6).toFixed(0)+" Mo)",0)}}
+  await Promise.all([w(),w(),w(),w(),w(),w()]);b.disabled=false;msg("Zone gardée hors-ligne : "+list.length+" tuiles, ≈ "+(bytes/1e6).toFixed(0)+" Mo. Carte, relief et tracé marchent sans réseau (le fond « Photos » n'est pas gardé).",9000);store.set("cgr-off",String(Date.now()))};
+mapReady.then(()=>setTimeout(onTrack,0));
 </script>
 </body>
 </html>
