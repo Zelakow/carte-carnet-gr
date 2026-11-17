@@ -373,6 +373,7 @@ mapReady.then(()=>setTimeout(onTrack,0));
     {id:"regionaux",sl:"regionaux",s:"ete",c:"#e07b00",z:8,w:[8,1.4,14,3.2],t:11.5},
     {id:"locaux",sl:"locaux",s:"ete",c:"#3b6fd6",z:10,w:[10,1.2,15,2.6],t:13.5},
     {id:"hok",sl:"hok",fi:"hiver",s:"hiver",c:"#2457b8",z:9,w:[9,1.2,14,3],t:12.5},
+    {id:"hwarn",sl:"hwarn",fi:"hiver",s:"hiver",c:"#e07b00",z:11,w:[11,1.2,15,2.6],t:14,dash:[2,1.2],op:.8},
     {id:"hrisk",sl:"hrisk",fi:"hiver",s:"hiver",c:"#c62828",z:11,w:[11,1.2,15,2.6],t:14,dash:[1.2,1.6],op:.75},
     {id:"hiver",sl:"hiver",s:"hiver",c:"#0b9bb5",z:9,w:[9,2.2,14,5],t:11.5,f:["!=",["get","a"],1]},
     {id:"hiverx",sl:"hiver",s:"hiver",c:"#0b9bb5",z:9,w:[9,2.2,14,5],t:11.5,f:["==",["get","a"],1],dash:[2,1.4]}];
@@ -380,8 +381,9 @@ mapReady.then(()=>setTimeout(onTrack,0));
   try{if(window.pmtiles&&!window._pmp){window._pmp=new pmtiles.Protocol();maplibregl.addProtocol("pmtiles",window._pmp.tile)}}catch{}
   const FLAG={FR:"🇫🇷",CH:"🇨🇭",IT:"🇮🇹",DE:"🇩🇪",AT:"🇦🇹",ES:"🇪🇸"};const KN={gr:"grand itinéraire (GR)",regionaux:"GR de Pays / itinéraire régional",locaux:"sentier local (PR)",hiver:"itinéraire raquettes / randonnée hivernale balisé"};
   function info(q){
-    if(q.k==="hok")return (FLAG[q.p]||"")+" "+q.n+" · praticable l'hiver : aucune pente de 30° ou plus à moins de 120 m (repère, à confirmer avec le bulletin d'avalanche et l'enneigement du jour).";
-    if(q.k==="hrisk")return (FLAG[q.p]||"")+" "+q.n+" · à éviter l'hiver : pente de 30° ou plus à moins de 120 m (zone où partent les avalanches) ou passage alpin / via ferrata.";
+    if(q.k==="hok")return (FLAG[q.p]||"")+" "+q.n+" · praticable l'hiver : aucune pente de 30° ou plus à moins de 120 m, ou seulement des pentes basses (sous 1 000 m) où la neige tient rarement (repère, à confirmer avec le bulletin d'avalanche et l'enneigement du jour).";
+    if(q.k==="hwarn")return (FLAG[q.p]||"")+" "+q.n+" · prudence l'hiver : pente de 30° ou plus (≈ 58 %) à moins de 120 m, culminant entre 1 000 et 1 500 m. Avalanches possibles après de fortes chutes de neige : regarde le bulletin.";
+    if(q.k==="hrisk")return (FLAG[q.p]||"")+" "+q.n+" · à éviter l'hiver : pente de 30° ou plus (≈ 58 %) à moins de 120 m culminant au-dessus de 1 500 m (zone où partent les avalanches), ou passage alpin / via ferrata / glacier.";
     return (FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"")+(q.a==1?" · tracé approximatif dans OpenStreetMap (pointillés)":"")}
   async function draw(){
     for(const f of FILES){const src="all-"+f;
@@ -392,13 +394,13 @@ mapReady.then(()=>setTimeout(onTrack,0));
         if(!map.getLayer(id)){const before=map.getLayer("gd")?"gd":undefined,op=L.op||.85;
           const ln={id,type:"line",source:src,"source-layer":L.sl,minzoom:L.z,layout:{"line-join":"round","line-cap":L.dash?"butt":"round"},paint:{"line-color":L.c,"line-opacity":op,"line-width":["interpolate",["linear"],["zoom"],...L.w]}};
           if(L.dash)ln.paint["line-dasharray"]=L.dash;if(L.f)ln.filter=L.f;map.addLayer(ln,before);
-          const sy={id:lb,type:"symbol",source:src,"source-layer":L.sl,minzoom:L.t,layout:{"symbol-placement":"line","symbol-spacing":320,"text-field":L.id==="hrisk"?["concat","⚠ ",["get","n"]]:["get","n"],"text-font":["Source Sans Pro Bold"],"text-size":["interpolate",["linear"],["zoom"],L.t,11,16,14],"text-max-angle":35,"text-padding":4,"text-offset":[0,-.75]},paint:{"text-color":L.c,"text-halo-color":"#fff","text-halo-width":1.8}};
+          const sy={id:lb,type:"symbol",source:src,"source-layer":L.sl,minzoom:L.t,layout:{"symbol-placement":"line","symbol-spacing":320,"text-field":L.id==="hrisk"?["concat","⚠ ",["get","n"]]:L.id==="hwarn"?["concat","! ",["get","n"]]:["get","n"],"text-font":["Source Sans Pro Bold"],"text-size":["interpolate",["linear"],["zoom"],L.t,11,16,14],"text-max-angle":35,"text-padding":4,"text-offset":[0,-.75]},paint:{"text-color":L.c,"text-halo-color":"#fff","text-halo-width":1.8}};
           if(L.f)sy.filter=L.f;map.addLayer(sy,before);
           map.on("click",id,e=>{const q=e.features?.[0]?.properties;if(q)msg(info(q),9000)});
           map.on("mouseenter",id,()=>map.getCanvas().style.cursor="pointer");map.on("mouseleave",id,()=>map.getCanvas().style.cursor="")}
         else for(const x of [id,lb])map.setLayoutProperty(x,"visibility","visible")}}
   }
-  const HMSG="Hiver : en bleu les sentiers praticables (aucune pente ≥ 30° à moins de 120 m), en turquoise les itinéraires raquettes balisés, en pointillés rouges les passages à éviter. Repère seulement : vérifie toujours le bulletin d'avalanche.";
+  const HMSG="Hiver : bleu = praticable ; turquoise = raquettes balisées ; pointillés orange = prudence (pente raide entre 1 000 et 1 500 m) ; pointillés rouges = à éviter (pente raide au-dessus de 1 500 m, passage alpin). Repère seulement : vérifie toujours le bulletin d'avalanche.";
   function setOn(v){on=v;document.getElementById("allb").setAttribute("aria-pressed",on);document.getElementById("saison").hidden=!on;try{localStorage.setItem("cgr-tous",on?"1":"0")}catch{}
     if(on){msg(saison==="hiver"?HMSG:"De loin : les grands itinéraires. Zoome pour voir les régionaux, puis les sentiers locaux.",6000)}draw()}
   document.getElementById("allb").onclick=()=>setOn(!on);
