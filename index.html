@@ -74,6 +74,7 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
 /* Carnet GR — carte IGN complète. Le parcours arrive dans l'adresse (après #) : rien n'est enregistré ni envoyé ailleurs qu'à l'IGN (fonds de carte).
    #n=<nom>&t=<polyline précision 5>&m=<lat,lng,étiquette;…> */
 const P = new URLSearchParams(location.hash.slice(1));
+const HP=location.hash.slice(1).split("&"),WANT3D=HP.includes("3d"),EUROPE=HP.includes("europe");
 function decode(s){const o=[];let i=0,la=0,lo=0;while(i<s.length){for(const k of [0,1]){let r=0,sh=0,b;do{b=s.charCodeAt(i++)-63;r|=(b&31)<<sh;sh+=5}while(b>=32&&i<=s.length);const d=r&1?~(r>>1):r>>1;if(k)lo+=d;else la+=d}o.push([lo/1e5,la/1e5])}return o}
 let track=[];try{track=decode(P.get("t")||"").filter(p=>isFinite(p[0])&&isFinite(p[1])&&Math.abs(p[1])<=90)}catch{}
 const guide=track.slice();let precise=null,eles=null; // guide = tracé simplifié de l'appli ; precise = tracé calé (lon,lat)
@@ -96,10 +97,11 @@ const BASES={plan:"https://data.geopf.fr/annexes/ressources/vectorTiles/styles/P
 let base="plan";try{const b=localStorage.getItem("cgr-fond");if(BASES[b])base=b}catch{}
 
 const bounds=track.length>1?track.reduce((b,p)=>[[Math.min(b[0][0],p[0]),Math.min(b[0][1],p[1])],[Math.max(b[1][0],p[0]),Math.max(b[1][1],p[1])]],[[180,90],[-180,-90]]):null;
-const map=new maplibregl.Map({container:"map",style:BASES[base],bounds:bounds||[[-5.2,41.3],[9.6,51.1]],fitBoundsOptions:{padding:{top:80,bottom:50,left:40,right:60}},maxZoom:19,attributionControl:{compact:false},dragRotate:false,pitchWithRotate:true,maxPitch:75});
+const map=new maplibregl.Map({container:"map",style:BASES[base],bounds:bounds||(EUROPE?[[-9.5,36.5],[19.5,55]]:[[-5.2,41.3],[9.6,51.1]]),fitBoundsOptions:{padding:{top:80,bottom:50,left:40,right:60}},maxZoom:19,attributionControl:{compact:false},dragRotate:false,pitchWithRotate:true,maxPitch:75});
 map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}),"bottom-left");
 let relief=false;try{relief=localStorage.getItem("cgr-3d")==="1"}catch{}
+if(WANT3D)relief=true; /* lien « Carte de tous les sentiers » de l'appli : #tous&europe&3d */
 let exag=2;try{const e=+localStorage.getItem("cgr-exag");if(e>=1&&e<=4)exag=e}catch{}
 const DEM={type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:14,attribution:"Relief © Mapzen / AWS Terrain Tiles"};
 function applyRelief(){ // relief réel (MNT mondial) : le fond de carte et le tracé épousent le terrain ; inclinaison et rotation seulement en 3D
@@ -360,6 +362,7 @@ mapReady.then(()=>setTimeout(onTrack,0));
   map.on("style.load",()=>setTimeout(draw,0));
   const startOn=/(^|&)tous(&|=|$)/.test(location.hash.slice(1))||(!track.length&&(()=>{try{return localStorage.getItem("cgr-tous")!=="0"}catch{return true}})());
   if(startOn){if(map.isStyleLoaded())setOn(true);else map.once("load",()=>setOn(true))}
+  if(WANT3D){const go=()=>{try{applyRelief();map.easeTo({pitch:55,bearing:-10,duration:1200})}catch{}};if(map.isStyleLoaded())go();else map.once("load",go)}
 })();
 </script>
 
