@@ -19,6 +19,12 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 .seg{display:flex;padding:3px;gap:2px}
 .seg button,.btn{font:inherit;color:inherit;border:0;background:none;border-radius:999px;padding:6px 12px;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+@media (max-width:760px){#exg{top:calc(max(10px,env(safe-area-inset-top)) + 104px)!important}}  
+.exw{position:relative;width:min(46vw,220px);padding-bottom:14px}
+#exr{width:100%;margin:0;accent-color:var(--fg);touch-action:none;height:26px}
+.exticks{position:absolute;left:0;right:0;bottom:0;height:12px;font-size:10px;color:var(--mut)}
+.exticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.exticks span::before{content:"";position:absolute;left:50%;top:-5px;width:1px;height:4px;background:currentColor}
 .side{position:fixed;right:max(10px,env(safe-area-inset-right));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);display:flex;flex-direction:column;gap:8px;z-index:5}
 .side .btn[aria-pressed=true]{background:var(--fg);color:var(--bg)}
 .side .btn{width:44px;height:44px;padding:0;font-size:20px;line-height:1;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);box-shadow:0 2px 10px rgba(0,0,0,.12)}
@@ -66,7 +72,7 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
 <div class="pill" id="msg" hidden></div>
 <div class="pill" id="live"></div>
 <div class="pill seg" id="spd" hidden role="group" aria-label="Vitesse du survol" style="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);z-index:6"><span style="padding:6px 8px;color:var(--mut)">Vitesse</span><button data-s="0.5">×½</button><button data-s="1" aria-pressed="true">×1</button><button data-s="2">×2</button><button data-s="4">×4</button></div>
-<div class="pill seg" id="exg" hidden role="group" aria-label="Relief" style="position:fixed;left:max(10px,env(safe-area-inset-left));top:calc(max(10px,env(safe-area-inset-top)) + 56px);z-index:5"><span style="padding:6px 8px;color:var(--mut)">Relief</span><button data-x="1.3">×1,3</button><button data-x="2">×2</button><button data-x="3">×3</button></div>
+<div class="pill" id="exg" hidden role="group" aria-label="Relief" style="position:fixed;left:max(10px,env(safe-area-inset-left));top:calc(max(10px,env(safe-area-inset-top)) + 56px);z-index:5;display:flex;align-items:center;gap:10px;padding:6px 14px"><span style="color:var(--mut)">Relief</span><div class="exw"><input type="range" id="exr" min="1" max="5" step="0.01" aria-label="Exagération du relief"><div class="exticks" aria-hidden="true"></div></div><b id="exv" style="min-width:3.2em;text-align:right">×2</b></div>
 <div class="pill" id="lay"><label><input type="checkbox" id="l-slope"> Pentes de montagne (&gt; 30° = avalanche)</label><label><input type="checkbox" id="l-trail"> Sentiers balisés (Waymarked Trails)</label><label><input type="checkbox" id="l-hill"> Ombrage du relief</label><small>Pentes : IGN · sentiers : waymarkedtrails.org, © OpenStreetMap</small></div>
 <div class="pill" id="prof"><div class="ph" id="prof-h"></div><div class="tip" id="prof-t"></div><svg id="prof-s" viewBox="0 0 600 96" preserveAspectRatio="none"></svg></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -103,7 +109,7 @@ map.touchZoomRotate.disableRotation();
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}),"bottom-left");
 let relief=false;try{relief=localStorage.getItem("cgr-3d")==="1"}catch{}
 if(WANT3D)relief=true; /* lien « Carte de tous les sentiers » de l'appli : #tous&europe&3d */
-let exag=2;try{const e=+localStorage.getItem("cgr-exag");if(e>=1&&e<=4)exag=e}catch{}
+let exag=2;try{const e=+localStorage.getItem("cgr-exag");if(e>=1&&e<=5)exag=e}catch{}
 const DEM={type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:14,attribution:"Relief © Mapzen / AWS Terrain Tiles"};
 function applyRelief(){ // relief réel (MNT mondial) : le fond de carte et le tracé épousent le terrain ; inclinaison et rotation seulement en 3D
   if(!map.getSource("dem"))map.addSource("dem",DEM);
@@ -316,7 +322,24 @@ async function startFly(mode){
     if(t<1)flying=requestAnimationFrame(step);else stopFly()};
   map.jumpTo({center:S2[0].ll});flying=requestAnimationFrame(step)}
 document.querySelectorAll("#spd button").forEach(b=>b.onclick=()=>{flySpeed=+b.dataset.s;document.querySelectorAll("#spd button").forEach(x=>x.setAttribute("aria-pressed",x===b))});
-document.querySelectorAll("#exg button").forEach(b=>{b.setAttribute("aria-pressed",+b.dataset.x===exag);b.onclick=()=>{exag=+b.dataset.x;store.set("cgr-exag",String(exag));document.querySelectorAll("#exg button").forEach(x=>x.setAttribute("aria-pressed",x===b));if(relief)map.setTerrain({source:"dem",exaggeration:exag})}});
+/* Garde la caméra au-dessus du relief exagéré (à ×4-×5 elle passait SOUS les montagnes : image floue et étirée).
+   Hauteur de la caméra au-dessus du centre = distance caméra-centre × mètres par pixel × cos(inclinaison) ; on compare au plus haut
+   relief (relatif au centre, déjà multiplié par l'exagération) sur un cercle de ≈ 1,5 fois la distance au sol, et on recule le zoom. */
+function keepAbove(){try{if(!relief||!map.getTerrain())return;const t=map.transform,c=map.getCenter(),z=map.getZoom(),pit=map.getPitch()*Math.PI/180;
+  const mpp=40075016*Math.cos(c.lat*Math.PI/180)/(512*2**z),h=t.cameraToCenterDistance*mpp*Math.cos(pit),R=Math.max(1500,t.cameraToCenterDistance*mpp*Math.sin(pit)*1.5);
+  let top=0;for(let i=0;i<=4;i++)for(let k=0;k<12;k++){const r=R*i/4,a=k*Math.PI/6,dl=r*Math.cos(a)/111320,dg=r*Math.sin(a)/(111320*Math.cos(c.lat*Math.PI/180));const e=map.queryTerrainElevation([c.lng+dg,c.lat+dl]);if(e>top)top=e;if(!i)break}
+  const need=top+400;if(need>h){const nz=Math.max(3,z-Math.log2(need/h)-.05);if(z-nz>.04)map.easeTo({zoom:nz,duration:500})}}catch{}}
+map.on("moveend",()=>{if(relief&&exag>2)setTimeout(keepAbove,50)});
+/* Relief : curseur ×1 (vraie échelle) à ×5, aimanté sur ×1 ×1,5 ×2 ×2,5 ×3 ×4 ×5 (demande de Louis, 17 nov.) */
+(function(){const STOPS=[1,1.5,2,2.5,3,4,5],r=document.getElementById("exr"),v=document.getElementById("exv"),tk=document.querySelector(".exticks");
+  const th=14,pos=x=>"calc("+((x-1)/4*100)+"% + "+(th*(1-2*(x-1)/4)/2)+"px)";
+  tk.innerHTML=STOPS.map(x=>'<span style="left:'+pos(x)+'">'+String(x).replace(".",",")+'</span>').join("");
+  const near=x=>STOPS.reduce((a,b)=>Math.abs(b-x)<Math.abs(a-x)?b:a);
+  const show=x=>{v.textContent="×"+String(x).replace(".",",");r.setAttribute("aria-valuetext",x===1?"vraie échelle":"×"+x)};
+  const apply=x=>{exag=x;show(x);if(relief)try{map.setTerrain({source:"dem",exaggeration:x});clearTimeout(apply.t);apply.t=setTimeout(keepAbove,250)}catch{}};
+  if(!STOPS.includes(exag))exag=near(exag);r.value=exag;show(exag);
+  r.addEventListener("input",()=>{const x=+r.value,n=near(x);apply(Math.abs(x-n)<.18?n:Math.round(x*10)/10)});
+  r.addEventListener("change",()=>{const n=near(+r.value);r.value=n;apply(n);store.set("cgr-exag",String(n));if(navigator.vibrate)try{navigator.vibrate(8)}catch{}})})();
 $("fly3").onclick=()=>startFly("3");$("fly2").onclick=()=>startFly("2");
 ["mousedown","touchstart","wheel"].forEach(e=>map.getCanvas().addEventListener(e,stopFly,{passive:true}));
 /* hors-ligne : service worker (cache des tuiles déjà vues) + téléchargement de la zone du parcours */
