@@ -70,6 +70,7 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
 <div class="pill" id="lay"><label><input type="checkbox" id="l-slope"> Pentes de montagne (&gt; 30° = avalanche)</label><label><input type="checkbox" id="l-trail"> Sentiers balisés (Waymarked Trails)</label><label><input type="checkbox" id="l-hill"> Ombrage du relief</label><small>Pentes : IGN · sentiers : waymarkedtrails.org, © OpenStreetMap</small></div>
 <div class="pill" id="prof"><div class="ph" id="prof-h"></div><div class="tip" id="prof-t"></div><svg id="prof-s" viewBox="0 0 600 96" preserveAspectRatio="none"></svg></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
 <script>
 /* Carnet GR — carte IGN complète. Le parcours arrive dans l'adresse (après #) : rien n'est enregistré ni envoyé ailleurs qu'à l'IGN (fonds de carte).
    #n=<nom>&t=<polyline précision 5>&m=<lat,lng,étiquette;…> */
@@ -338,22 +339,28 @@ mapReady.then(()=>setTimeout(onTrack,0));
 </script>
 <script>
 /* ---------- Tous les sentiers (demande de Louis, 17 nov. 2026) : de loin les grands itinéraires, en zoomant les régionaux puis les locaux ;
-   « Chemins d'hiver » = raquettes et randonnée hivernale balisées. Données : sentiers/*.json (tracés OpenStreetMap, ODbL), chargées à la demande. */
+   « Chemins d'hiver » = raquettes et randonnée hivernale balisées. Données : sentiers/*.pmtiles (tracés OpenStreetMap, ODbL). */
 (function(){
-  const LAY={gr:{c:"#cf1734",z:0,w:[5,1.6,9,2.6,14,4]},regionaux:{c:"#e07b00",z:7.5,w:[8,1.4,14,3.2]},locaux:{c:"#3b6fd6",z:10,w:[10,1.2,15,2.6]},hiver:{c:"#0b9bb5",z:7,w:[7,1.6,14,3.6]}};
-  const DATA={};let on=false,saison="ete";try{saison=localStorage.getItem("cgr-saison")||"ete"}catch{}
-  const FLAG={FR:"🇫🇷",CH:"🇨🇭",IT:"🇮🇹",DE:"🇩🇪",AT:"🇦🇹",ES:"🇪🇸"};const KN={GR:"grand itinéraire",GT:"grande traversée",GRP:"GR de Pays / régional",REG:"régional",PR:"sentier local",C2C:"itinéraire Camptocamp",PISTE:"raquettes / randonnée hivernale"};
-  async function load(k){if(DATA[k])return DATA[k];try{const r=await fetch("sentiers/"+k+".json");DATA[k]=r.ok?await r.json():{type:"FeatureCollection",features:[]}}catch{DATA[k]={type:"FeatureCollection",features:[]}}return DATA[k]}
+  /* Tuiles vectorielles PMTiles (sentiers/<pays>.pmtiles, géométrie OSM complète, script pays/commun/carte_tuiles.py) : la carte ne lit que
+     les morceaux à l'écran, tracés au mètre près en zoomant ; le nom de chaque sentier est écrit le long du trait. */
+  const FILES=["tous"];
+  const LAY={gr:{c:"#cf1734",z:0,w:[5,1.6,9,2.6,14,4],t:9},regionaux:{c:"#e07b00",z:8,w:[8,1.4,14,3.2],t:11.5},locaux:{c:"#3b6fd6",z:10,w:[10,1.2,15,2.6],t:13.5},hiver:{c:"#0b9bb5",z:9,w:[9,1.6,14,3.6],t:12}};
+  let on=false,saison="ete";try{saison=localStorage.getItem("cgr-saison")||"ete"}catch{}
+  try{if(window.pmtiles&&!window._pmp){window._pmp=new pmtiles.Protocol();maplibregl.addProtocol("pmtiles",window._pmp.tile)}}catch{}
+  const FLAG={FR:"🇫🇷",CH:"🇨🇭",IT:"🇮🇹",DE:"🇩🇪",AT:"🇦🇹",ES:"🇪🇸"};const KN={gr:"grand itinéraire (GR)",regionaux:"GR de Pays / itinéraire régional",locaux:"sentier local (PR)",hiver:"raquettes / randonnée hivernale"};
   const want=()=>saison==="hiver"?["gr","hiver"]:["gr","regionaux","locaux"];
   async function draw(){
-    for(const k of Object.keys(LAY)){const id="all-"+k;const show=on&&want().includes(k);
-      if(!show){if(map.getLayer(id))map.setLayoutProperty(id,"visibility","none");continue}
-      const d=await load(k);if(!map.getSource(id))map.addSource(id,{type:"geojson",data:d,tolerance:.6});
-      if(!map.getLayer(id)){const L=LAY[k];const before=map.getLayer("gd")?"gd":undefined;
-        map.addLayer({id,type:"line",source:id,minzoom:L.z,layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":L.c,"line-opacity":k==="gr"&&saison==="hiver"?.35:.85,"line-width":["interpolate",["linear"],["zoom"],...L.w]}},before);
-        map.on("click",id,e=>{const f=e.features?.[0];if(!f)return;const q=f.properties;const t=(FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"");msg(t,8000)});
-        map.on("mouseenter",id,()=>map.getCanvas().style.cursor="pointer");map.on("mouseleave",id,()=>map.getCanvas().style.cursor="")}
-      else{map.setLayoutProperty(id,"visibility","visible");map.setPaintProperty(id,"line-opacity",k==="gr"&&saison==="hiver"?.35:.85)}}
+    for(const f of FILES){const src="all-"+f;
+      if(on&&!map.getSource(src))map.addSource(src,{type:"vector",url:"pmtiles://"+new URL("sentiers/"+f+".pmtiles",location.href).href,attribution:"Sentiers © OpenStreetMap"});
+      for(const k of Object.keys(LAY)){const id=src+"-"+k,lb=id+"-n";const show=on&&want().includes(k);
+        if(!show){for(const x of [id,lb])if(map.getLayer(x))map.setLayoutProperty(x,"visibility","none");continue}
+        const L=LAY[k],op=k==="gr"&&saison==="hiver"?.35:.85;
+        if(!map.getLayer(id)){const before=map.getLayer("gd")?"gd":undefined;
+          map.addLayer({id,type:"line",source:src,"source-layer":k,minzoom:L.z,layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":L.c,"line-opacity":op,"line-width":["interpolate",["linear"],["zoom"],...L.w]}},before);
+          map.addLayer({id:lb,type:"symbol",source:src,"source-layer":k,minzoom:L.t,layout:{"symbol-placement":"line","symbol-spacing":320,"text-field":["get","n"],"text-font":["Source Sans Pro Bold"],"text-size":["interpolate",["linear"],["zoom"],L.t,11,16,14],"text-max-angle":35,"text-padding":4,"text-offset":[0,-.75]},paint:{"text-color":L.c,"text-halo-color":"#fff","text-halo-width":1.8,"text-opacity":op>.5?1:.6}},before);
+          map.on("click",id,e=>{const f=e.features?.[0];if(!f)return;const q=f.properties;const t=(FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"");msg(t,8000)});
+          map.on("mouseenter",id,()=>map.getCanvas().style.cursor="pointer");map.on("mouseleave",id,()=>map.getCanvas().style.cursor="")}
+        else{for(const x of [id,lb])map.setLayoutProperty(x,"visibility","visible");map.setPaintProperty(id,"line-opacity",op)}}}
   }
   function setOn(v){on=v;document.getElementById("allb").setAttribute("aria-pressed",on);document.getElementById("saison").hidden=!on;try{localStorage.setItem("cgr-tous",on?"1":"0")}catch{}
     if(on){msg(saison==="hiver"?"Chemins d'hiver balisés : raquettes et randonnée hivernale (zoome pour les voir).":"De loin : les grands itinéraires. Zoome pour voir les régionaux, puis les sentiers locaux.",6000)}draw()}
