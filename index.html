@@ -55,12 +55,14 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
   <button class="btn pill" id="prb" title="Profil d'altitude" aria-label="Profil d'altitude" aria-pressed="false" style="font-size:13px;font-weight:700">⛰</button>
   <button class="btn pill" id="fly3" title="Survol du parcours en relief (3D)" aria-label="Survol en relief 3D" aria-pressed="false" style="font-size:13px;font-weight:700">▶3D</button>
   <button class="btn pill" id="fly2" title="Survol du parcours vu du dessus (2D)" aria-label="Survol vu du dessus 2D" aria-pressed="false" style="font-size:13px;font-weight:700">▶2D</button>
+  <button class="btn pill" id="allb" title="Tous les sentiers" aria-label="Tous les sentiers" aria-pressed="false" style="font-size:15px">🥾</button>
   <button class="btn pill" id="lyb" title="Couches" aria-label="Couches" aria-pressed="false">☰</button>
   <button class="btn pill" id="off" title="Garder la zone hors-ligne" aria-label="Garder la zone hors-ligne">⬇︎</button>
   <button class="btn pill" id="fit" title="Voir tout le parcours" aria-label="Voir tout le parcours">⤢</button>
   <button class="btn pill" id="loc" title="Ma position" aria-label="Ma position">◎</button>
   <button class="btn pill" id="gpx" title="Télécharger le GPX" aria-label="Télécharger le GPX">⇩</button>
 </div>
+<div class="pill seg" id="saison" hidden role="group" aria-label="Saison" style="position:fixed;left:50%;transform:translateX(-50%);top:calc(max(10px,env(safe-area-inset-top)) + 46px);z-index:5"><button data-s="ete" aria-pressed="true">Chemins d'été</button><button data-s="hiver" aria-pressed="false">Chemins d'hiver</button></div>
 <div class="pill" id="msg" hidden></div>
 <div class="pill" id="live"></div>
 <div class="pill seg" id="spd" hidden role="group" aria-label="Vitesse du survol" style="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);z-index:6"><span style="padding:6px 8px;color:var(--mut)">Vitesse</span><button data-s="0.5">×½</button><button data-s="1" aria-pressed="true">×1</button><button data-s="2">×2</button><button data-s="4">×4</button></div>
@@ -332,5 +334,34 @@ $("off").onclick=async()=>{
   await Promise.all([w(),w(),w(),w(),w(),w()]);b.disabled=false;msg("Zone gardée hors-ligne : "+list.length+" tuiles, ≈ "+(bytes/1e6).toFixed(0)+" Mo. Carte, relief et tracé marchent sans réseau (le fond « Photos » n'est pas gardé).",9000);store.set("cgr-off",String(Date.now()))};
 mapReady.then(()=>setTimeout(onTrack,0));
 </script>
+<script>
+/* ---------- Tous les sentiers (demande de Louis, 17 nov. 2026) : de loin les grands itinéraires, en zoomant les régionaux puis les locaux ;
+   « Chemins d'hiver » = raquettes et randonnée hivernale balisées. Données : sentiers/*.json (tracés OpenStreetMap, ODbL), chargées à la demande. */
+(function(){
+  const LAY={gr:{c:"#cf1734",z:0,w:[5,1.6,9,2.6,14,4]},regionaux:{c:"#e07b00",z:7.5,w:[8,1.4,14,3.2]},locaux:{c:"#3b6fd6",z:10,w:[10,1.2,15,2.6]},hiver:{c:"#0b9bb5",z:7,w:[7,1.6,14,3.6]}};
+  const DATA={};let on=false,saison="ete";try{saison=localStorage.getItem("cgr-saison")||"ete"}catch{}
+  const FLAG={FR:"🇫🇷",CH:"🇨🇭",IT:"🇮🇹",DE:"🇩🇪",AT:"🇦🇹",ES:"🇪🇸"};const KN={GR:"grand itinéraire",GT:"grande traversée",GRP:"GR de Pays / régional",REG:"régional",PR:"sentier local",C2C:"itinéraire Camptocamp",PISTE:"raquettes / randonnée hivernale"};
+  async function load(k){if(DATA[k])return DATA[k];try{const r=await fetch("sentiers/"+k+".json");DATA[k]=r.ok?await r.json():{type:"FeatureCollection",features:[]}}catch{DATA[k]={type:"FeatureCollection",features:[]}}return DATA[k]}
+  const want=()=>saison==="hiver"?["gr","hiver"]:["gr","regionaux","locaux"];
+  async function draw(){
+    for(const k of Object.keys(LAY)){const id="all-"+k;const show=on&&want().includes(k);
+      if(!show){if(map.getLayer(id))map.setLayoutProperty(id,"visibility","none");continue}
+      const d=await load(k);if(!map.getSource(id))map.addSource(id,{type:"geojson",data:d,tolerance:.6});
+      if(!map.getLayer(id)){const L=LAY[k];const before=map.getLayer("gd")?"gd":undefined;
+        map.addLayer({id,type:"line",source:id,minzoom:L.z,layout:{"line-join":"round","line-cap":"round"},paint:{"line-color":L.c,"line-opacity":k==="gr"&&saison==="hiver"?.35:.85,"line-width":["interpolate",["linear"],["zoom"],...L.w]}},before);
+        map.on("click",id,e=>{const f=e.features?.[0];if(!f)return;const q=f.properties;const t=(FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"");msg(t,8000)});
+        map.on("mouseenter",id,()=>map.getCanvas().style.cursor="pointer");map.on("mouseleave",id,()=>map.getCanvas().style.cursor="")}
+      else{map.setLayoutProperty(id,"visibility","visible");map.setPaintProperty(id,"line-opacity",k==="gr"&&saison==="hiver"?.35:.85)}}
+  }
+  function setOn(v){on=v;document.getElementById("allb").setAttribute("aria-pressed",on);document.getElementById("saison").hidden=!on;try{localStorage.setItem("cgr-tous",on?"1":"0")}catch{}
+    if(on){msg(saison==="hiver"?"Chemins d'hiver balisés : raquettes et randonnée hivernale (zoome pour les voir).":"De loin : les grands itinéraires. Zoome pour voir les régionaux, puis les sentiers locaux.",6000)}draw()}
+  document.getElementById("allb").onclick=()=>setOn(!on);
+  document.querySelectorAll("#saison button").forEach(b=>{b.setAttribute("aria-pressed",b.dataset.s===saison);b.onclick=()=>{saison=b.dataset.s;try{localStorage.setItem("cgr-saison",saison)}catch{}document.querySelectorAll("#saison button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.s===saison));draw();msg(saison==="hiver"?"Chemins d'hiver balisés (raquettes, randonnée hivernale).":"Chemins d'été.",3000)}});
+  map.on("style.load",()=>setTimeout(draw,0));
+  const startOn=/(^|&)tous(&|=|$)/.test(location.hash.slice(1))||(!track.length&&(()=>{try{return localStorage.getItem("cgr-tous")!=="0"}catch{return true}})());
+  if(startOn){if(map.isStyleLoaded())setOn(true);else map.once("load",()=>setOn(true))}
+})();
+</script>
+
 </body>
 </html>
