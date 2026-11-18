@@ -51,6 +51,10 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px/1.
 #fondb{font-weight:600}#fondb::after{content:" ▾";color:var(--mut)}
 #saison .sep{width:1px;background:var(--edge);margin:4px 3px}#lay label{display:flex;gap:8px;align-items:center;padding:5px 0;white-space:nowrap}#lay small{display:block;color:var(--mut);font-size:12px;margin-top:4px}
 body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}body.hasprof #msg{bottom:calc(max(14px,env(safe-area-inset-bottom)) + 170px)}body.hasprof #lay{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}
+#cap{position:fixed;left:50%;transform:translateX(-50%);top:calc(max(10px,env(safe-area-inset-top)) + 92px);z-index:4;width:min(300px,calc(100vw - 32px));height:44px;border-radius:999px;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);box-shadow:0 2px 10px rgba(0,0,0,.12);cursor:pointer;overflow:hidden;color:var(--fg,#222)}
+#capc{position:absolute;inset:0;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}
+#capm{position:absolute;left:50%;top:0;width:0;height:0;margin-left:-5px;border:5px solid transparent;border-top:7px solid #d6372b}
+#capv{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);font:700 11px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums;color:#d6372b}
 </style>
 </head>
 <body>
@@ -59,6 +63,7 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
   <div class="pill title" id="title">Carte IGN</div>
   <button class="pill btn" id="fondb" aria-haspopup="true" aria-expanded="false" title="Changer de fond de carte">Plan IGN</button>
 </div>
+<div id="cap" title="Cap de la carte : toucher pour remettre le nord en haut" role="img" aria-label="Cap de la carte"><canvas id="capc"></canvas><div id="capm"></div><div id="capv">0°</div></div>
 <div class="side">
   <button class="btn pill" id="cmp" title="Boussole : toucher pour remettre le nord en haut" aria-label="Boussole, remettre le nord en haut"><svg id="cmpn" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" style="transition:transform .12s linear"><path d="M12 2 16.5 12H7.5Z" fill="#d6372b"/><path d="M12 22 7.5 12h9Z" fill="currentColor" opacity=".55"/><circle cx="12" cy="12" r="1.6" fill="#fff" stroke="currentColor" stroke-width=".8"/></svg><span style="position:absolute;top:2px;left:0;right:0;font-size:9px;font-weight:700;line-height:1;color:#d6372b">N</span></button>
   <button class="btn pill" id="d3" title="Relief en 3D" aria-label="Relief en 3D" aria-pressed="false" style="font-size:14px;font-weight:700">3D</button>
@@ -195,6 +200,18 @@ const fondsOpen=v=>{fondsEl.classList.toggle("on",v);fondB.setAttribute("aria-ex
 fondB.onclick=e=>{e.stopPropagation();fondsOpen(!fondsEl.classList.contains("on"))};
 document.querySelectorAll("#fonds button").forEach(x=>x.onclick=()=>{fondsOpen(false);if(x.dataset.b!==base)setBase(x.dataset.b)});
 document.addEventListener("click",e=>{if(!fondsEl.contains(e.target))fondsOpen(false)});showBase();
+/* bande de cap en haut : défile comme une roue, N/NE/E… tous les 45°, graduations tous les 5°, cap exact au centre */
+(function(){const box=document.getElementById("cap"),cv=document.getElementById("capc"),val=document.getElementById("capv"),ctx=cv.getContext("2d"),PX=3.2,
+  NOM={0:"N",45:"NE",90:"E",135:"SE",180:"S",225:"SO",270:"O",315:"NO"};
+  function draw(){const w=box.clientWidth,h=box.clientHeight,d=Math.min(2,devicePixelRatio||1);if(cv.width!==w*d||cv.height!==h*d){cv.width=w*d;cv.height=h*d}
+    ctx.setTransform(d,0,0,d,0,0);ctx.clearRect(0,0,w,h);const fg=getComputedStyle(box).color,hd=((map.getBearing()%360)+360)%360,half=w/2/PX;
+    val.textContent=Math.round(hd)%360+"°";ctx.fillStyle=fg;ctx.strokeStyle=fg;ctx.textAlign="center";
+    for(let a=Math.ceil((hd-half)/5)*5;a<=hd+half;a+=5){const x=w/2+(a-hd)*PX,m=((a%360)+360)%360,maj=m%45===0,mid=m%15===0;
+      ctx.globalAlpha=maj?.9:mid?.6:.35;ctx.lineWidth=maj?1.6:1;ctx.beginPath();ctx.moveTo(x,10);ctx.lineTo(x,maj?20:mid?17:14);ctx.stroke();
+      ctx.globalAlpha=.85;if(maj){ctx.font=(m%90===0?"700 14px":"600 12px")+" system-ui,sans-serif";ctx.fillStyle=m===0?"#d6372b":fg;ctx.fillText(NOM[m],x,34);ctx.fillStyle=fg}
+      else if(m%15===0&&m%45){ctx.font="500 9px system-ui,sans-serif";ctx.globalAlpha=.6;ctx.fillText(m,x,32)}}}
+  map.on("rotate",draw);map.on("load",draw);window.addEventListener("resize",draw);draw();
+  box.onclick=()=>map.easeTo({bearing:0,duration:400})})();
 /* boussole : l'aiguille suit la rotation de la carte ; un toucher remet le nord en haut */
 (function(){const n=document.getElementById("cmpn"),b=document.getElementById("cmp");b.style.position="relative";
   const up=()=>{n.style.transform="rotate("+(-map.getBearing())+"deg)"};map.on("rotate",up);map.on("load",up);up();
