@@ -55,6 +55,8 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
 #capc{position:absolute;inset:0;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}
 #capm{position:absolute;left:50%;top:0;width:0;height:0;margin-left:-5px;border:5px solid transparent;border-top:7px solid #d6372b}
 #capv{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);font:700 11px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums;color:#d6372b}
+#leg{position:fixed;left:max(10px,env(safe-area-inset-left));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 40px);z-index:4;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--edge);border-radius:14px;padding:8px 11px;box-shadow:0 2px 10px rgba(0,0,0,.12);font-size:12px;line-height:1.25;max-width:min(260px,calc(100vw - 90px));pointer-events:none}
+#leg div{display:flex;align-items:center;gap:8px;margin:3px 0}#leg i{flex:none;width:26px;height:0;border-top:3px solid var(--c)}#leg i.d{border-top-style:dotted}#leg i.e{border-top-style:dashed}#leg small{display:block;color:var(--mut);margin-top:4px;font-size:10.5px}
 </style>
 </head>
 <body>
@@ -77,7 +79,8 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
   <button class="btn pill" id="loc" title="Ma position" aria-label="Ma position">◎</button>
   <button class="btn pill" id="gpx" title="Télécharger le GPX" aria-label="Télécharger le GPX">⇩</button>
 </div>
-<div class="pill seg" id="saison" hidden role="group" aria-label="Saison" style="position:fixed;left:50%;transform:translateX(-50%);top:calc(max(10px,env(safe-area-inset-top)) + 46px);z-index:5"><button data-s="ete" aria-pressed="true" title="Chemins d'été">Été</button><button data-s="hiver" aria-pressed="false" title="Chemins d'hiver">Hiver</button><span class="sep"></span><button data-n="tous" title="Tous les sentiers balisés">Tous</button><button data-n="reg" title="Grands itinéraires et itinéraires régionaux (GR de Pays)">GR+rég.</button><button data-n="gr" title="Grands itinéraires seulement">GR</button></div>
+<div class="pill seg" id="saison" hidden role="group" aria-label="Saison" style="position:fixed;left:50%;transform:translateX(-50%);top:calc(max(10px,env(safe-area-inset-top)) + 46px);z-index:5"><button data-s="ete" aria-pressed="true" title="Chemins d'été">Été</button><button data-s="hiver" aria-pressed="false" title="Chemins d'hiver">Hiver</button><span class="sep"></span><button data-n="tous" title="Tous les sentiers balisés">Tous</button><button data-n="reg" title="Grands itinéraires et itinéraires régionaux (GR de Pays)">GR+rég.</button><button data-n="gr" title="Grands itinéraires seulement">GR</button><span class="sep" id="psep"></span><button data-p="1" id="pbtn" title="Hiver : ne montrer que les sentiers praticables (cacher prudence et à éviter)">Praticables</button></div>
+<div id="leg" hidden aria-label="Légende"></div>
 <div class="pill" id="fonds" role="menu" aria-label="Fond de carte">
   <button data-b="plan"><b>Plan IGN</b><small>France : carte IGN · ailleurs : topo européenne</small></button>
   <button data-b="otm"><b>Topo Europe</b><small>courbes de niveau, sommets, lacs, partout pareil</small></button>
@@ -447,7 +450,7 @@ mapReady.then(()=>setTimeout(onTrack,0));
     {id:"hrisk",sl:"hrisk",fi:"hiver",s:"hiver",c:"#c62828",z:11,w:[11,1.2,15,2.6],t:14,dash:[1.2,1.6],op:.75},
     {id:"hiver",sl:"hiver",s:"hiver",c:"#0b9bb5",z:9,w:[9,2.2,14,5],t:11.5,f:["!=",["get","a"],1]},
     {id:"hiverx",sl:"hiver",s:"hiver",c:"#0b9bb5",z:9,w:[9,2.2,14,5],t:11.5,f:["==",["get","a"],1],dash:[2,1.4]}];
-  let on=false,saison="ete",niv="tous";try{saison=localStorage.getItem("cgr-saison")||"ete";niv=localStorage.getItem("cgr-niv")||"tous"}catch{}
+  let on=false,saison="ete",niv="tous",prat=true;try{saison=localStorage.getItem("cgr-saison")||"ete";niv=localStorage.getItem("cgr-niv")||"tous";prat=localStorage.getItem("cgr-prat")!=="0"}catch{}
   /* niveau affiché : tous / GR + régionaux / GR seuls (l'hiver, d'après la propriété s = couche d'origine du morceau ; raquettes toujours) */
   const NIVL={tous:["gr","regionaux","locaux"],reg:["gr","regionaux"],gr:["gr"]};
   try{if(window.pmtiles&&!window._pmp){window._pmp=new pmtiles.Protocol();maplibregl.addProtocol("pmtiles",window._pmp.tile)}}catch{}
@@ -457,11 +460,15 @@ mapReady.then(()=>setTimeout(onTrack,0));
     if(q.k==="hwarn")return (FLAG[q.p]||"")+" "+q.n+" · prudence l'hiver : pente de 30° ou plus (≈ 58 %) à moins de 120 m, culminant entre 1 000 et 1 500 m. Avalanches possibles après de fortes chutes de neige : regarde le bulletin.";
     if(q.k==="hrisk")return (FLAG[q.p]||"")+" "+q.n+" · à éviter l'hiver : pente de 30° ou plus (≈ 58 %) à moins de 120 m culminant au-dessus de 1 500 m (zone où partent les avalanches), ou passage alpin / via ferrata / glacier.";
     return (FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"")+(q.a==1?" · tracé approximatif dans OpenStreetMap (pointillés)":"")}
-  async function draw(){
+  function legend(){const el=document.getElementById("leg"),pb=document.getElementById("pbtn"),ps=document.getElementById("psep"),w=saison==="hiver";pb.hidden=ps.hidden=!w;pb.setAttribute("aria-pressed",prat);
+    const row=(c,t,k)=>`<div><i class="${k||""}" style="--c:${c}"></i><span>${t}</span></div>`;
+    el.innerHTML=!on?"":w?row("#2457b8","Praticable l'hiver")+row("#0b9bb5","Raquettes balisées")+(prat?"":row("#e07b00","Prudence (pente raide, 1 000–1 500 m)","d")+row("#c62828","À éviter (avalanches, passage alpin)","e"))+"<small>Repère seulement : vérifie le bulletin d'avalanche.</small>":row("#cf1734","Grands itinéraires (GR)")+row("#e07b00","Itinéraires régionaux")+row("#3b6fd6","Sentiers locaux");
+    el.hidden=!on}
+  async function draw(){legend();
     for(const [f,ty] of FILES){const src="all-"+f;
       const mine=LAY.filter(L=>(L.fi||"tous")===ty);if(!mine.length)continue;
       if(on&&mine.some(L=>L.s===saison)&&!map.getSource(src))map.addSource(src,{type:"vector",url:"pmtiles://"+new URL("sentiers/"+f+".pmtiles",location.href).href,attribution:"Sentiers © OpenStreetMap · relief Copernicus"});
-      for(const L of mine){const id=src+"-"+L.id,lb=id+"-n";const show=on&&L.s===saison&&(!NIVL.tous.includes(L.id)||NIVL[niv].includes(L.id));
+      for(const L of mine){const id=src+"-"+L.id,lb=id+"-n";const show=on&&L.s===saison&&(!NIVL.tous.includes(L.id)||NIVL[niv].includes(L.id))&&!(prat&&(L.id==="hwarn"||L.id==="hrisk"));
         const H=["hok","hwarn","hrisk"].includes(L.id),fN=H&&niv!=="tous"?["in",["get","s"],["literal",NIVL[niv]]]:null;
         if(!show){for(const x of [id,lb])if(map.getLayer(x))map.setLayoutProperty(x,"visibility","none");continue}
         if(!map.getLayer(id)){const before=map.getLayer("gd")?"gd":undefined,op=L.op||.85;
@@ -482,6 +489,7 @@ mapReady.then(()=>setTimeout(onTrack,0));
   document.querySelectorAll("#saison button[data-s]").forEach(b=>{b.setAttribute("aria-pressed",b.dataset.s===saison);b.onclick=()=>setSaison(b.dataset.s)});
   const NMSG={tous:"Tous les sentiers balisés (les locaux apparaissent en zoomant).",reg:"Grands itinéraires et itinéraires régionaux seulement.",gr:"Grands itinéraires seulement (GR et équivalents)."};
   document.querySelectorAll("#saison button[data-n]").forEach(b=>{b.setAttribute("aria-pressed",b.dataset.n===niv);b.onclick=()=>{niv=b.dataset.n;try{localStorage.setItem("cgr-niv",niv)}catch{}document.querySelectorAll("#saison button[data-n]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.n===niv));draw();msg(NMSG[niv],3500)}});
+  document.getElementById("pbtn").onclick=()=>{prat=!prat;try{localStorage.setItem("cgr-prat",prat?"1":"0")}catch{}draw();msg(prat?"Seulement les sentiers praticables l'hiver.":"Tous les sentiers d'hiver, avec ceux à prudence ou à éviter.",3500)};
   map.on("style.load",()=>setTimeout(draw,0));
   const startOn=/(^|&)tous(&|=|$)/.test(location.hash.slice(1))||(!track.length&&(()=>{try{return localStorage.getItem("cgr-tous")!=="0"}catch{return true}})());
   if(startOn){if(map.isStyleLoaded())setOn(true);else map.once("load",()=>setOn(true))}
