@@ -60,6 +60,7 @@ body.hasprof .side{bottom:calc(max(10px,env(safe-area-inset-bottom)) + 160px)}bo
   <button class="pill btn" id="fondb" aria-haspopup="true" aria-expanded="false" title="Changer de fond de carte">Plan IGN</button>
 </div>
 <div class="side">
+  <button class="btn pill" id="cmp" title="Boussole : toucher pour remettre le nord en haut" aria-label="Boussole, remettre le nord en haut"><svg id="cmpn" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" style="transition:transform .12s linear"><path d="M12 2 16.5 12H7.5Z" fill="#d6372b"/><path d="M12 22 7.5 12h9Z" fill="currentColor" opacity=".55"/><circle cx="12" cy="12" r="1.6" fill="#fff" stroke="currentColor" stroke-width=".8"/></svg><span style="position:absolute;top:2px;left:0;right:0;font-size:9px;font-weight:700;line-height:1;color:#d6372b">N</span></button>
   <button class="btn pill" id="d3" title="Relief en 3D" aria-label="Relief en 3D" aria-pressed="false" style="font-size:14px;font-weight:700">3D</button>
   <button class="btn pill" id="prb" title="Profil d'altitude" aria-label="Profil d'altitude" aria-pressed="false" style="font-size:13px;font-weight:700">⛰</button>
   <button class="btn pill" id="fly3" title="Survol du parcours en relief (3D)" aria-label="Survol en relief 3D" aria-pressed="false" style="font-size:13px;font-weight:700">▶3D</button>
@@ -194,6 +195,10 @@ const fondsOpen=v=>{fondsEl.classList.toggle("on",v);fondB.setAttribute("aria-ex
 fondB.onclick=e=>{e.stopPropagation();fondsOpen(!fondsEl.classList.contains("on"))};
 document.querySelectorAll("#fonds button").forEach(x=>x.onclick=()=>{fondsOpen(false);if(x.dataset.b!==base)setBase(x.dataset.b)});
 document.addEventListener("click",e=>{if(!fondsEl.contains(e.target))fondsOpen(false)});showBase();
+/* boussole : l'aiguille suit la rotation de la carte ; un toucher remet le nord en haut */
+(function(){const n=document.getElementById("cmpn"),b=document.getElementById("cmp");b.style.position="relative";
+  const up=()=>{n.style.transform="rotate("+(-map.getBearing())+"deg)"};map.on("rotate",up);map.on("load",up);up();
+  b.onclick=()=>map.easeTo({bearing:0,duration:400})})();
 document.getElementById("fit").onclick=()=>{if(bounds)map.fitBounds(bounds,{padding:{top:80,bottom:50,left:40,right:60},duration:400})};
 let here=null,watch=null;
 function setHere(c){here=c;map.getSource("me")?.setData({type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Point",coordinates:c}}]})}
