@@ -369,8 +369,8 @@ mapReady.then(()=>setTimeout(onTrack,0));
   /* Tuiles vectorielles PMTiles (sentiers/<pays>.pmtiles, géométrie OSM complète, script pays/commun/carte_tuiles.py) : la carte ne lit que
      les morceaux à l'écran, tracés au mètre près en zoomant ; le nom de chaque sentier est écrit le long du trait. */
   /* [fichier, type] : tous = sentiers balisés + raquettes ; hiver = sentiers classés pour l'hiver. Limite GitHub 100 Mo par fichier :
-     France + Suisse dans tous/hiver, puis un fichier par pays (it = Italie du Nord). */
-  const FILES=[["tous","tous"],["hiver","hiver"],["it","tous"],["it-hiver","hiver"]];
+     France + Suisse dans tous/hiver, puis un fichier par pays (it = Italie du Nord, de = Allemagne du Sud). */
+  const FILES=[["tous","tous"],["hiver","hiver"],["it","tous"],["it-hiver","hiver"],["de","tous"],["de-hiver","hiver"]];
   /* couches : sl = couche des tuiles ; hok/hrisk = sentiers classés pour l'hiver (pente du terrain ≥ 30° à moins de 120 m → à éviter) */
   const LAY=[
     {id:"gr",sl:"gr",s:"ete",c:"#cf1734",z:0,w:[5,1.6,9,2.6,14,4],t:9},
