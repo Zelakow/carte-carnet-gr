@@ -1,6 +1,6 @@
 /* Carnet GR · carte : cache des tuiles et de la page pour le mode hors-ligne.
    Les fonds de carte (IGN, relief, sentiers) déjà vus ou téléchargés via le bouton ⬇︎ restent disponibles sans réseau. */
-const V="cgr-carte-v4",HOSTS=["data.geopf.fr","s3.amazonaws.com","tile.waymarkedtrails.org","unpkg.com","a.tile.opentopomap.org","b.tile.opentopomap.org","c.tile.opentopomap.org"],MAX=7000;
+const V="cgr-carte-v5",HOSTS=["data.geopf.fr","s3.amazonaws.com","tile.waymarkedtrails.org","unpkg.com","a.tile.opentopomap.org","b.tile.opentopomap.org","c.tile.opentopomap.org","a.tile.openstreetmap.fr","b.tile.openstreetmap.fr","c.tile.openstreetmap.fr","tiles.opensnowmap.org","server.arcgisonline.com"],MAX=7000;
 self.addEventListener("install",e=>{self.skipWaiting();e.waitUntil(caches.open(V).then(c=>c.addAll(["./","sw.js"]).catch(()=>{})))});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
 async function trim(c){const k=await c.keys();if(k.length>MAX)for(const r of k.slice(0,k.length-MAX+500))await c.delete(r)}
