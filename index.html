@@ -174,7 +174,7 @@ function world(){try{if(!["plan","topo","photo"].includes(base)||map.getSource("
   const first=map.getStyle().layers[0]?.id;map.addLayer({id:"world",type:"raster",source:"world",paint:{"raster-opacity":base==="photo"?1:.9,"raster-fade-duration":0}},first);
   /* le fond blanc du Plan IGN déborde largement de la frontière (lac de Côme blanc) : on l'efface et on masque seulement la France */
   if(map.getLayer("bckgrd")){map.setPaintProperty("bckgrd","fill-opacity",0);map.addSource("fr",{type:"geojson",data:new URL("france.json",location.href).href});
-    map.addLayer({id:"frmask",type:"fill",source:"fr",paint:{"fill-color":"#fff","fill-antialias":false}},"bckgrd")}
+    map.addLayer({id:"frmask",type:"fill",source:"fr",paint:{"fill-color":"#fff","fill-antialias":false,"fill-opacity":["interpolate",["linear"],["zoom"],5.5,0,7.5,1]}},"bckgrd")}
   rasterFr()}catch{}}
 /* « Classique » et « Photos » (images IGN) sont blanches hors de France : quand le centre de la carte sort de France, on les cache
    et OpenTopoMap prend le relais. */
