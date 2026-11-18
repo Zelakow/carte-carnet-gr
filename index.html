@@ -180,8 +180,10 @@ function world(){try{if(!["plan","topo","photo"].includes(base)||map.getSource("
    et OpenTopoMap prend le relais. */
 let FR=null;fetch("france.json").then(r=>r.json()).then(j=>{FR=j.geometry.type==="Polygon"?[j.geometry.coordinates]:j.geometry.coordinates;rasterFr()}).catch(()=>{});
 function inFr(x,y){if(!FR)return true;for(const poly of FR){let c=false;const r=poly[0];for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}if(c)return true}return false}
-function rasterFr(){try{if(!map.getLayer("r"))return;const c=map.getCenter(),v=map.getZoom()<7||inFr(c.lng,c.lat)?"visible":"none";if(map.getLayoutProperty("r","visibility")!==v)map.setLayoutProperty("r","visibility",v)}catch{}}
-map.on("moveend",rasterFr);
+function rasterFr(){try{if(!map.getLayer("r"))return;const c=map.getCenter(),v=map.getZoom()<7||inFr(c.lng,c.lat)?"visible":"none";if(map.getLayoutProperty("r","visibility")!==v)map.setLayoutProperty("r","visibility",v)}catch{}
+  /* le fond mondial est caché sous le blanc de la France : quand tout l'écran est en France, on arrête de le télécharger (OpenTopoMap est lent) */
+  try{if(!map.getLayer("world"))return;const b=map.getBounds(),c=map.getCenter(),all=map.getZoom()>=8&&[[b.getWest(),b.getSouth()],[b.getWest(),b.getNorth()],[b.getEast(),b.getSouth()],[b.getEast(),b.getNorth()],[c.lng,c.lat]].every(q=>inFr(q[0],q[1])),w=all?"none":"visible";if(map.getLayoutProperty("world","visibility")!==w)map.setLayoutProperty("world","visibility",w)}catch{}}
+map.on("moveend",rasterFr);map.on("pitchend",rasterFr);
 map.on("style.load",world);if(map.isStyleLoaded())world();
 map.on("error",e=>{if(/standard\.json|Failed to fetch/.test(String(e?.error?.message||""))&&base==="plan"){msg("Le Plan IGN ne répond pas : je passe sur la carte classique.");setBase("topo")}});
 function showBase(){document.querySelectorAll("#fonds button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.b===base));document.getElementById("fondb").textContent=BNAME[base]}
