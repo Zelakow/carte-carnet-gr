@@ -366,7 +366,9 @@ mapReady.then(()=>setTimeout(onTrack,0));
 (function(){
   /* Tuiles vectorielles PMTiles (sentiers/<pays>.pmtiles, géométrie OSM complète, script pays/commun/carte_tuiles.py) : la carte ne lit que
      les morceaux à l'écran, tracés au mètre près en zoomant ; le nom de chaque sentier est écrit le long du trait. */
-  const FILES=["tous","hiver"];  /* tous = sentiers balisés + raquettes ; hiver = sentiers classés pour l'hiver (fichier à part : limite GitHub 100 Mo) */
+  /* [fichier, type] : tous = sentiers balisés + raquettes ; hiver = sentiers classés pour l'hiver. Limite GitHub 100 Mo par fichier :
+     France + Suisse dans tous/hiver, puis un fichier par pays (it = Italie du Nord). */
+  const FILES=[["tous","tous"],["hiver","hiver"],["it","tous"],["it-hiver","hiver"]];
   /* couches : sl = couche des tuiles ; hok/hrisk = sentiers classés pour l'hiver (pente du terrain ≥ 30° à moins de 120 m → à éviter) */
   const LAY=[
     {id:"gr",sl:"gr",s:"ete",c:"#cf1734",z:0,w:[5,1.6,9,2.6,14,4],t:9},
@@ -386,8 +388,8 @@ mapReady.then(()=>setTimeout(onTrack,0));
     if(q.k==="hrisk")return (FLAG[q.p]||"")+" "+q.n+" · à éviter l'hiver : pente de 30° ou plus (≈ 58 %) à moins de 120 m culminant au-dessus de 1 500 m (zone où partent les avalanches), ou passage alpin / via ferrata / glacier.";
     return (FLAG[q.p]||"")+" "+q.n+" · "+(KN[q.k]||q.k)+" · "+String(q.km||"").replace(".",",")+" km"+(q.d?" · "+q.d+" m D+":"")+(q.a==1?" · tracé approximatif dans OpenStreetMap (pointillés)":"")}
   async function draw(){
-    for(const f of FILES){const src="all-"+f;
-      const mine=LAY.filter(L=>(L.fi||"tous")===f);if(!mine.length)continue;
+    for(const [f,ty] of FILES){const src="all-"+f;
+      const mine=LAY.filter(L=>(L.fi||"tous")===ty);if(!mine.length)continue;
       if(on&&mine.some(L=>L.s===saison)&&!map.getSource(src))map.addSource(src,{type:"vector",url:"pmtiles://"+new URL("sentiers/"+f+".pmtiles",location.href).href,attribution:"Sentiers © OpenStreetMap · relief Copernicus"});
       for(const L of mine){const id=src+"-"+L.id,lb=id+"-n";const show=on&&L.s===saison;
         if(!show){for(const x of [id,lb])if(map.getLayer(x))map.setLayoutProperty(x,"visibility","none");continue}
