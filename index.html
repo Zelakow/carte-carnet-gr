@@ -343,7 +343,9 @@ map.on("moveend",()=>{if(relief&&exag>2)setTimeout(keepAbove,50)});
 $("fly3").onclick=()=>startFly("3");$("fly2").onclick=()=>startFly("2");
 ["mousedown","touchstart","wheel"].forEach(e=>map.getCanvas().addEventListener(e,stopFly,{passive:true}));
 /* hors-ligne : service worker (cache des tuiles déjà vues) + téléchargement de la zone du parcours */
-if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator&&location.protocol.startsWith("http")){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{});
+  /* nouvelle version de la carte installée alors qu'une ancienne copie est affichée : recharge une fois pour l'afficher */
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{let k=null;try{k=sessionStorage.getItem("cgr-rl");sessionStorage.setItem("cgr-rl","1")}catch{}if(had&&!k)location.reload()})}
 const tileXY=(lon,lat,z)=>{const n=2**z;return[Math.floor((lon+180)/360*n),Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*n)]};
 $("off").onclick=async()=>{
   if(!("caches" in window)||!navigator.serviceWorker?.controller)return msg("Le mode hors-ligne s'active après une première visite : recharge la page puis réessaie.",7000);
