@@ -147,6 +147,22 @@ function overlay(){
   applyRelief();
 }
 map.on("style.load",overlay);
+/* Hors de France (demande de Louis, 18 nov.) : les fonds IGN s'arrêtent à la frontière. Dessous, OpenTopoMap (OSM, toute l'Europe) :
+   courbes de niveau, villes et villages, lacs, rivières. En France le fond IGN, opaque, le recouvre. */
+const WORLD={type:"raster",tiles:["a","b","c"].map(x=>"https://"+x+".tile.opentopomap.org/{z}/{x}/{y}.png"),tileSize:256,maxzoom:17,attribution:'Hors France : © <a href="https://opentopomap.org" target="_blank" rel="noopener">OpenTopoMap</a> (CC-BY-SA), © OpenStreetMap'};
+function world(){try{if(map.getSource("world"))return;map.addSource("world",WORLD);
+  const first=map.getStyle().layers[0]?.id;map.addLayer({id:"world",type:"raster",source:"world",paint:{"raster-opacity":.9,"raster-fade-duration":0}},first);
+  /* le fond blanc du Plan IGN déborde largement de la frontière (lac de Côme blanc) : on l'efface et on masque seulement la France */
+  if(map.getLayer("bckgrd")){map.setPaintProperty("bckgrd","fill-opacity",0);map.addSource("fr",{type:"geojson",data:new URL("france.json",location.href).href});
+    map.addLayer({id:"frmask",type:"fill",source:"fr",paint:{"fill-color":"#fff","fill-antialias":false}},"bckgrd")}
+  rasterFr()}catch{}}
+/* « Classique » et « Photos » (images IGN) sont blanches hors de France : quand le centre de la carte sort de France, on les cache
+   et OpenTopoMap prend le relais. */
+let FR=null;fetch("france.json").then(r=>r.json()).then(j=>{FR=j.geometry.type==="Polygon"?[j.geometry.coordinates]:j.geometry.coordinates;rasterFr()}).catch(()=>{});
+function inFr(x,y){if(!FR)return true;for(const poly of FR){let c=false;const r=poly[0];for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}if(c)return true}return false}
+function rasterFr(){try{if(!map.getLayer("r"))return;const c=map.getCenter(),v=map.getZoom()<7||inFr(c.lng,c.lat)?"visible":"none";if(map.getLayoutProperty("r","visibility")!==v)map.setLayoutProperty("r","visibility",v)}catch{}}
+map.on("moveend",rasterFr);
+map.on("style.load",world);if(map.isStyleLoaded())world();
 map.on("error",e=>{if(/standard\.json|Failed to fetch/.test(String(e?.error?.message||""))&&base==="plan"){msg("Le Plan IGN ne répond pas : je passe sur la carte classique.");setBase("topo")}});
 function setBase(b){base=b;try{localStorage.setItem("cgr-fond",b)}catch{}document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",x.dataset.b===b));map.setStyle(BASES[b],{diff:false})}
 document.querySelectorAll(".seg button").forEach(x=>{x.setAttribute("aria-pressed",x.dataset.b===base);x.onclick=()=>setBase(x.dataset.b)});
